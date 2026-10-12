@@ -18,19 +18,16 @@ import {
   Activity,
   Layers,
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
-
-const ResponsiveContainer = dynamic(
-  () => import('recharts').then((mod) => mod.ResponsiveContainer),
-  { ssr: false }
-);
-const BarChart = dynamic(() => import('recharts').then((mod) => mod.BarChart), { ssr: false });
-const Bar = dynamic(() => import('recharts').then((mod) => mod.Bar), { ssr: false });
-const XAxis = dynamic(() => import('recharts').then((mod) => mod.XAxis), { ssr: false });
-const YAxis = dynamic(() => import('recharts').then((mod) => mod.YAxis), { ssr: false });
-const Tooltip = dynamic(() => import('recharts').then((mod) => mod.Tooltip), { ssr: false });
-const CartesianGrid = dynamic(() => import('recharts').then((mod) => mod.CartesianGrid), { ssr: false });
-const Legend = dynamic(() => import('recharts').then((mod) => mod.Legend), { ssr: false });
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+} from 'recharts';
 
 type Booking = Database['public']['Tables']['bookings']['Row'];
 type Product = Database['public']['Tables']['products']['Row'];
@@ -43,6 +40,11 @@ export default function AdminReportsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const supabase = createClient();
 
@@ -242,7 +244,19 @@ export default function AdminReportsPage() {
       </div>
 
       {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {!mounted ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs h-80 flex items-center justify-center text-slate-400 text-xs animate-pulse"
+            >
+              Loading charts...
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Daily Bookings */}
         <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center space-x-2 mb-4">
@@ -340,6 +354,7 @@ export default function AdminReportsPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Summary Table */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">

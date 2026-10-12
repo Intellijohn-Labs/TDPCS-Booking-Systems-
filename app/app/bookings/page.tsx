@@ -170,15 +170,21 @@ export default function BookingsListPage() {
     }
 
     try {
-      const { error } = await supabase.from('bookings').delete().eq('id', b.id);
-      if (error) {
-        alert(error.message);
-      } else {
-        if (selectedBooking?.id === b.id) {
-          setSelectedBooking(null);
+      // 1. Try delete via RPC first (runs with security definer & records audit log)
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('delete_booking', { p_id: b.id });
+      if (rpcErr || (rpcRes && !rpcRes.ok)) {
+        // Fallback to direct DELETE statement (enabled via staff delete bookings policy)
+        const { error: delErr } = await supabase.from('bookings').delete().eq('id', b.id);
+        if (delErr) {
+          alert(delErr.message || (rpcRes && rpcRes.error) || 'Failed to delete booking');
+          return;
         }
-        await loadData();
       }
+
+      if (selectedBooking?.id === b.id) {
+        setSelectedBooking(null);
+      }
+      await loadData();
     } catch (err: any) {
       alert(err.message || 'Failed to delete booking');
     }

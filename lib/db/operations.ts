@@ -713,5 +713,12 @@ export function executeRpc(functionName: string, args: any = {}): any {
     return { ok: true, cancelled: updateInfo.changes };
   }
 
+  if (functionName === 'delete_booking') {
+    const { p_id } = args;
+    db.prepare('DELETE FROM bookings WHERE id = ?').run(p_id);
+    db.prepare("INSERT INTO audit_log (actor, action, booking_id, details) VALUES ('staff', 'delete', ?, '{}')").run(p_id);
+    return { ok: true };
+  }
+
   return { ok: false, error: 'Unknown RPC function' };
 }

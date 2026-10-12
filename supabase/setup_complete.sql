@@ -442,6 +442,28 @@ begin
   return jsonb_build_object('ok', true, 'cancelled', n);
 end $$;
 
+create or replace function delete_booking(p_id bigint) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  if not is_staff() then
+    return jsonb_build_object('ok', false, 'error', 'forbidden');
+  end if;
+
+  delete from bookings where id = p_id;
+  get diagnostics n = row_count;
+
+  if n = 0 then
+    return jsonb_build_object('ok', false, 'error', 'not_found');
+  end if;
+
+  insert into audit_log(actor, action, booking_id, details)
+    values (auth.uid()::text, 'delete', p_id, jsonb_build_object('deleted_at', now()));
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
 -- 8. Permissions and RLS Policies
 revoke execute on all functions in schema public from public, anon, authenticated;
 grant execute on function customer_init(text), customer_slots(text, date, int[]),
@@ -492,6 +514,12 @@ create policy "admin write settings" on settings for all to authenticated
 
 drop policy if exists "staff read bookings" on bookings;
 create policy "staff read bookings" on bookings for select to authenticated using (is_staff());
+
+drop policy if exists "staff delete bookings" on bookings;
+create policy "staff delete bookings" on bookings for delete to authenticated using (is_staff());
+
+drop policy if exists "staff update bookings" on bookings;
+create policy "staff update bookings" on bookings for update to authenticated using (is_staff()) with check (is_staff());
 
 drop policy if exists "admin read audit" on audit_log;
 create policy "admin read audit" on audit_log for select to authenticated using (is_admin());
@@ -652,6 +680,7 @@ for each row execute function notify_n8n();
 grant execute on function book_slot(text, text, date, timestamp, int[]),
   cancel_booking(bigint, text),
   reschedule_booking(bigint, text, timestamp),
+  delete_booking(bigint),
   no_show_sweep()
 to anon, authenticated, service_role;
 

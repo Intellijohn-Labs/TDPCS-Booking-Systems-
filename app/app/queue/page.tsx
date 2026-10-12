@@ -132,12 +132,15 @@ export default function QueueDeskPage() {
     if (!confirm(`Permanently delete token ${tokenNo} from queue?`)) return;
     setActionLoadingId(bookingId);
     try {
-      const { error } = await supabase.from('bookings').delete().eq('id', bookingId);
-      if (error) {
-        alert(error.message);
-      } else {
-        await loadData();
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('delete_booking', { p_id: bookingId });
+      if (rpcErr || (rpcRes && !rpcRes.ok)) {
+        const { error: delErr } = await supabase.from('bookings').delete().eq('id', bookingId);
+        if (delErr) {
+          alert(delErr.message || (rpcRes && rpcRes.error) || 'Failed to delete booking');
+          return;
+        }
       }
+      await loadData();
     } catch (e: any) {
       alert(e.message || 'Error deleting token');
     } finally {

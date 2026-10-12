@@ -66,7 +66,7 @@ export default function AdminUsersPage() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: any) => {
       if (data?.user?.id) setCurrentUserId(data.user.id);
     });
     loadProfiles();
