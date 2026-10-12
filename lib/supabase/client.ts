@@ -1,5 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
-import { isSqliteMode } from '@/lib/db/config';
+import { isSqliteMode, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '@/lib/db/config';
 
 class LocalQueryBuilder {
   private table: string;
@@ -219,11 +219,11 @@ export function createClient(): any {
   }
 
   if (!browserClientInstance) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
     const anonKey =
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      'placeholder-anon-key';
+      DEFAULT_SUPABASE_ANON_KEY;
     browserClientInstance = createBrowserClient(url, anonKey);
   }
   return browserClientInstance;

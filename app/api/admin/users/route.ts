@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient as createServerSupabase } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
-import { isSqliteMode } from '@/lib/db/config';
+import { isSqliteMode, DEFAULT_SUPABASE_URL } from '@/lib/db/config';
 import { authCreateUser, authResetPassword, authToggleActive, authDeleteUser } from '@/lib/db/auth';
 import {
   createUserPg,
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     }
 
     // 3. Supabase / Postgres Mode
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
     const hasServiceRoleKey =
       serviceRoleKey &&

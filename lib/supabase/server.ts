@@ -1,6 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { isSqliteMode } from '@/lib/db/config';
+import { isSqliteMode, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '@/lib/db/config';
 import { executeQuery, executeRpc } from '@/lib/db/operations';
 import { verifySessionToken } from '@/lib/db/auth';
 
@@ -148,11 +148,11 @@ export function createClient(): any {
   }
 
   const cookieStore = cookies();
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
   const anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    'placeholder-anon-key';
+    DEFAULT_SUPABASE_ANON_KEY;
 
   return createServerClient(url, anonKey, {
     cookies: {
