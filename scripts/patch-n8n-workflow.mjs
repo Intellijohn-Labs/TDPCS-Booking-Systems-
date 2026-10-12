@@ -4,7 +4,7 @@ import pg from 'pg';
 const apiKey = process.env.N8N_API_KEY || '';
 const workflowId = '86QmzTAMJ83IQznP';
 const n8nHost = 'https://n8n.srv1691210.hstgr.cloud';
-const appBaseUrl = 'https://chatting-specked-cassette.ngrok-free.dev';
+const appBaseUrl = 'https://tdpcs-booking-systems.vercel.app';
 
 async function main() {
   console.log('1. Fetching current workflow from n8n API...');
