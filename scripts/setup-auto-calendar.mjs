@@ -26,18 +26,15 @@ begin
     v_day := v_today + i;
     v_dow := extract(isodow from v_day)::int; -- 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 7=Sun
 
-    if v_dow = any(p_working_dows) then
-      if v_dow = 6 then
-        -- Saturday: Half-day session (10:00 - 12:30)
-        insert into open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)
-        values (v_day, 'open', '10:00', '12:30', null, null, 'Saturday Half-Day Session')
-        on conflict (day) do nothing;
-      else
-        -- Standard Working Day (10:00 - 13:00, 14:00 - 17:00)
-        insert into open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)
-        values (v_day, 'open', '10:00', '13:00', '14:00', '17:00', 'Standard Working Day')
-        on conflict (day) do nothing;
-      end if;
+    if (v_dow = any(p_working_dows)) then
+      insert into open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)
+      values (v_day, 'open', '10:10', '12:30', '14:00', '17:00', 'Standard Working Day')
+      on conflict (day) do update set
+        s1_start = '10:10',
+        s1_end = '12:30',
+        s2_start = '14:00',
+        s2_end = '17:00'
+      where open_days.status = 'open';
 
       if found then
         v_inserted := v_inserted + 1;

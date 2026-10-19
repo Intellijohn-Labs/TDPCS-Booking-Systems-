@@ -51,8 +51,8 @@ export default function AdminCalendarPage() {
   const [editingDay, setEditingDay] = useState<string | null>(null);
   const [formDate, setFormDate] = useState('');
   const [formStatus, setFormStatus] = useState<'open' | 'blocked'>('open');
-  const [formS1Start, setFormS1Start] = useState('10:00');
-  const [formS1End, setFormS1End] = useState('13:00');
+  const [formS1Start, setFormS1Start] = useState('10:10');
+  const [formS1End, setFormS1End] = useState('12:30');
   const [formS2Start, setFormS2Start] = useState('14:00');
   const [formS2End, setFormS2End] = useState('17:00');
   const [formHasS2, setFormHasS2] = useState(true);
@@ -176,8 +176,8 @@ export default function AdminCalendarPage() {
     setEditingDay(null);
     setFormDate(getTodayIST());
     setFormStatus('open');
-    setFormS1Start('10:00');
-    setFormS1End('13:00');
+    setFormS1Start('10:10');
+    setFormS1End('12:30');
     setFormS2Start('14:00');
     setFormS2End('17:00');
     setFormHasS2(true);
@@ -191,8 +191,8 @@ export default function AdminCalendarPage() {
     setEditingDay(d.day);
     setFormDate(d.day);
     setFormStatus(d.status);
-    setFormS1Start(d.s1_start || '10:00');
-    setFormS1End(d.s1_end || '13:00');
+    setFormS1Start(d.s1_start || '10:10');
+    setFormS1End(d.s1_end || '12:30');
     setFormS2Start(d.s2_start || '14:00');
     setFormS2End(d.s2_end || '17:00');
     setFormHasS2(Boolean(d.s2_start && d.s2_end));
@@ -390,9 +390,9 @@ export default function AdminCalendarPage() {
             </div>
             <p className="text-xs text-emerald-100/90 max-w-2xl leading-relaxed">
               Open dates are automatically maintained ahead every night. Members can book slots up to{' '}
-              <strong className="text-white underline">{advanceDays} days advance</strong>. The society pattern
-              opens <strong className="text-white">Tuesdays & Thursdays</strong> (10:00–17:00) and{' '}
-              <strong className="text-white">Saturdays</strong> (10:00–12:30).
+              <strong className="text-white underline">{advanceDays} days advance</strong>. All open days are
+              scheduled for <strong className="text-white">Session 1 (10:10 AM – 12:30 PM)</strong> and{' '}
+              <strong className="text-white">Session 2 (2:00 PM – 5:00 PM)</strong>.
             </p>
           </div>
 
@@ -647,7 +647,7 @@ export default function AdminCalendarPage() {
                   }`}
                 >
                   <span className="block font-bold">TDPCS Standard</span>
-                  <span className="text-[10px] text-slate-500 font-normal">Tue & Thu (Full), Sat (Half)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">Tue, Thu & Sat (10:10–12:30 & 14:00–17:00)</span>
                 </button>
 
                 <button

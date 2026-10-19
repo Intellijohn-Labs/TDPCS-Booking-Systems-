@@ -167,15 +167,15 @@ function initSchemaAndSeed(db: DatabaseSync) {
       const dayStr = d.toISOString().split('T')[0];
       const dow = d.getDay(); // 0 Sun, 1 Mon, 2 Tue, 3 Wed, 4 Thu, 5 Fri, 6 Sat
 
-      // Working hours: Morning 10:00 - 13:00, Afternoon 14:00 - 17:00
+      // Working hours: Morning 10:10 - 12:30, Afternoon 14:00 - 17:00
       if (i === 0 || i === 1 || dow === 2 || dow === 4 || dow === 6) {
-        insertDay.run(dayStr, '10:00', '13:00', '14:00', '17:00', 'Society Working Day');
+        insertDay.run(dayStr, '10:10', '12:30', '14:00', '17:00', 'Society Working Day');
       }
     }
   }
 
-  // Ensure all existing open_days have the specified working hours: 10:00-13:00 and 14:00-17:00
-  db.exec("UPDATE open_days SET s1_start = '10:00', s1_end = '13:00', s2_start = '14:00', s2_end = '17:00' WHERE status = 'open';");
+  // Ensure all existing open_days have the specified working hours: 10:10-12:30 and 14:00-17:00
+  db.exec("UPDATE open_days SET s1_start = '10:10', s1_end = '12:30', s2_start = '14:00', s2_end = '17:00' WHERE status = 'open';");
 
   // 5. Seed Demo Booking Links (for WhatsApp test links & multiple persona testing)
   const defaultLinks = [

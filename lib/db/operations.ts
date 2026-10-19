@@ -759,15 +759,8 @@ function autoGenerateOpenDaysSqlite(
     const isodow = dow === 0 ? 7 : dow; // 1=Mon, ..., 6=Sat, 7=Sun
 
     if (workingDows.includes(isodow)) {
-      if (isodow === 6) {
-        // Saturday: Half-day 10:00 - 12:30
-        const res = insertDay.run(dayStr, '10:00', '12:30', null, null, 'Saturday Half-Day Session');
-        if (res.changes > 0) inserted++;
-      } else {
-        // Standard: 10:00 - 13:00, 14:00 - 17:00
-        const res = insertDay.run(dayStr, '10:00', '13:00', '14:00', '17:00', 'Standard Working Day');
-        if (res.changes > 0) inserted++;
-      }
+      const res = insertDay.run(dayStr, '10:10', '12:30', '14:00', '17:00', 'Standard Working Day');
+      if (res.changes > 0) inserted++;
     }
   }
 
