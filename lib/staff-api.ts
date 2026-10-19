@@ -64,3 +64,29 @@ export async function blockDay(
   }
   return data as BlockDayResult;
 }
+
+export type AutoGenerateResult = {
+  ok: boolean;
+  days_checked?: number;
+  days_inserted?: number;
+  from_date?: string;
+  to_date?: string;
+  error?: string;
+};
+
+export async function autoGenerateOpenDays(
+  daysAhead: number = 60,
+  workingDows: number[] = [2, 4, 6]
+): Promise<AutoGenerateResult> {
+  const supabase = createClient();
+  const { data, error } = await (supabase.rpc as any)('auto_generate_open_days', {
+    p_days_ahead: daysAhead,
+    p_working_dows: workingDows,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return data as AutoGenerateResult;
+}
+

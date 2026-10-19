@@ -376,13 +376,24 @@ export function executeRpc(functionName: string, args: any = {}): any {
     const advSetting = db.prepare("SELECT value FROM settings WHERE key = 'advance_days'").get() as any;
     const advanceDays = parseInt(advSetting?.value || '15', 10);
 
-    const openDays = db.prepare(`
+    let openDays = db.prepare(`
       SELECT day, s1_start, s1_end, s2_start, s2_end
       FROM open_days
       WHERE status = 'open' AND day >= ?
       ORDER BY day ASC
       LIMIT ?
     `).all(todayIST, advanceDays) as any[];
+
+    if (openDays.length < 3) {
+      autoGenerateOpenDaysSqlite(db, Math.max(advanceDays * 2, 45));
+      openDays = db.prepare(`
+        SELECT day, s1_start, s1_end, s2_start, s2_end
+        FROM open_days
+        WHERE status = 'open' AND day >= ?
+        ORDER BY day ASC
+        LIMIT ?
+      `).all(todayIST, advanceDays) as any[];
+    }
 
     const products = db.prepare(`
       SELECT id, name, minutes
@@ -720,5 +731,50 @@ export function executeRpc(functionName: string, args: any = {}): any {
     return { ok: true };
   }
 
+  if (functionName === 'auto_generate_open_days') {
+    const { p_days_ahead = 60, p_working_dows = [2, 4, 6] } = args;
+    return autoGenerateOpenDaysSqlite(db, p_days_ahead, p_working_dows);
+  }
+
   return { ok: false, error: 'Unknown RPC function' };
+}
+
+function autoGenerateOpenDaysSqlite(
+  db: any,
+  daysAhead: number = 60,
+  workingDows: number[] = [2, 4, 6]
+) {
+  const insertDay = db.prepare(`
+    INSERT OR IGNORE INTO open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)
+    VALUES (?, 'open', ?, ?, ?, ?, ?)
+  `);
+
+  const today = new Date();
+  let inserted = 0;
+  for (let i = 0; i <= daysAhead; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const dayStr = d.toISOString().split('T')[0];
+    const dow = d.getDay(); // 0 Sun, 1 Mon, 2 Tue, 3 Wed, 4 Thu, 5 Fri, 6 Sat
+    const isodow = dow === 0 ? 7 : dow; // 1=Mon, ..., 6=Sat, 7=Sun
+
+    if (workingDows.includes(isodow)) {
+      if (isodow === 6) {
+        // Saturday: Half-day 10:00 - 12:30
+        const res = insertDay.run(dayStr, '10:00', '12:30', null, null, 'Saturday Half-Day Session');
+        if (res.changes > 0) inserted++;
+      } else {
+        // Standard: 10:00 - 13:00, 14:00 - 17:00
+        const res = insertDay.run(dayStr, '10:00', '13:00', '14:00', '17:00', 'Standard Working Day');
+        if (res.changes > 0) inserted++;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    days_checked: daysAhead,
+    days_inserted: inserted,
+    from_date: today.toISOString().split('T')[0],
+  };
 }
