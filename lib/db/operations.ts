@@ -736,6 +736,39 @@ export function executeRpc(functionName: string, args: any = {}): any {
     return autoGenerateOpenDaysSqlite(db, p_days_ahead, p_working_dows);
   }
 
+  if (functionName === 'log_audit_event') {
+    const { p_action, p_details = {}, p_booking_id = null, p_actor = 'system' } = args;
+    const res = db.prepare(`
+      INSERT INTO audit_log (actor, action, booking_id, details)
+      VALUES (?, ?, ?, ?)
+    `).run(p_actor, p_action, p_booking_id, JSON.stringify(p_details));
+    return { ok: true, id: res.lastInsertRowid };
+  }
+
+  if (functionName === 'purge_old_records_4months') {
+    const linksRes = db.prepare("DELETE FROM booking_links WHERE expires_at < datetime('now')").run();
+    const bookingsRes = db.prepare("DELETE FROM bookings WHERE day < date('now', '-4 months')").run();
+    const auditRes = db.prepare("DELETE FROM audit_log WHERE at < datetime('now', '-4 months')").run();
+
+    if (bookingsRes.changes > 0 || auditRes.changes > 0 || linksRes.changes > 0) {
+      db.prepare(`
+        INSERT INTO audit_log (actor, action, details)
+        VALUES ('system', 'system:purge_4months', ?)
+      `).run(JSON.stringify({
+        deleted_bookings: bookingsRes.changes,
+        deleted_audit_logs: auditRes.changes,
+        deleted_links: linksRes.changes,
+      }));
+    }
+
+    return {
+      ok: true,
+      deleted_bookings: bookingsRes.changes,
+      deleted_audit_logs: auditRes.changes,
+      deleted_links: linksRes.changes,
+    };
+  }
+
   return { ok: false, error: 'Unknown RPC function' };
 }
 

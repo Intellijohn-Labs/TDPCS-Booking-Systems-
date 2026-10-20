@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { logAuditEvent } from '@/lib/staff-api';
 import {
   Sliders,
   Save,
@@ -80,6 +81,15 @@ export default function AdminSettingsPage() {
         const { error } = await supabase.from('settings').upsert(item as any);
         if (error) throw error;
       }
+
+      await logAuditEvent('admin:update_settings', {
+        slot_step: slotStep.trim(),
+        report_buffer: reportBuffer.trim(),
+        max_extension: maxExtension.trim(),
+        advance_days: advanceDays.trim(),
+        client_notify_number: clientNotifyNumber.trim(),
+        n8n_webhook_url: n8nWebhookUrl.trim(),
+      });
 
       setFeedback({ type: 'success', message: 'All branch settings saved successfully.' });
     } catch (err: any) {

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Database } from '@/types/database';
+import { logAuditEvent } from '@/lib/staff-api';
 import {
   Package,
   Plus,
@@ -101,15 +102,17 @@ export default function AdminProductsPage() {
           .eq('id', editingId);
 
         if (error) throw error;
+        await logAuditEvent('admin:update_product', { product_id: editingId, name: name.trim(), minutes, sort_order: sortOrder, active });
       } else {
-        const { error } = await supabase.from('products').insert({
+        const { data: newProd, error } = await supabase.from('products').insert({
           name: name.trim(),
           minutes,
           sort_order: sortOrder,
           active,
-        } as any);
+        } as any).select().single();
 
         if (error) throw error;
+        await logAuditEvent('admin:create_product', { product_id: newProd?.id, name: name.trim(), minutes, sort_order: sortOrder, active });
       }
 
       setModalOpen(false);
@@ -128,7 +131,10 @@ export default function AdminProductsPage() {
         .update({ active: !p.active } as any)
         .eq('id', p.id);
       if (error) alert(error.message);
-      else await loadProducts();
+      else {
+        await logAuditEvent('admin:toggle_product', { product_id: p.id, name: p.name, active: !p.active });
+        await loadProducts();
+      }
     } catch (err: any) {
       alert(err.message);
     }
@@ -147,6 +153,7 @@ export default function AdminProductsPage() {
         supabase.from('products').update({ sort_order: targetProd.sort_order } as any).eq('id', currentProd.id),
         supabase.from('products').update({ sort_order: currentProd.sort_order } as any).eq('id', targetProd.id),
       ]);
+      await logAuditEvent('admin:reorder_products', { moved_product_id: currentProd.id, direction });
       await loadProducts();
     } catch (err: any) {
       alert(err.message);
@@ -169,6 +176,7 @@ export default function AdminProductsPage() {
         )
       ) {
         await supabase.from('products').update({ active: false } as any).eq('id', p.id);
+        await logAuditEvent('admin:deactivate_product', { product_id: p.id, name: p.name });
         await loadProducts();
       }
       return;
@@ -177,7 +185,10 @@ export default function AdminProductsPage() {
     if (confirm(`Are you sure you want to delete service "${p.name}"?`)) {
       const { error } = await supabase.from('products').delete().eq('id', p.id);
       if (error) alert(error.message);
-      else await loadProducts();
+      else {
+        await logAuditEvent('admin:delete_product', { product_id: p.id, name: p.name });
+        await loadProducts();
+      }
     }
   };
 

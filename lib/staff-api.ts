@@ -90,3 +90,41 @@ export async function autoGenerateOpenDays(
   return data as AutoGenerateResult;
 }
 
+export type PurgeRecordsResult = {
+  ok: boolean;
+  cutoff_date?: string;
+  deleted_bookings?: number;
+  deleted_audit_logs?: number;
+  deleted_links?: number;
+  error?: string;
+};
+
+export async function purgeOldRecords4Months(): Promise<PurgeRecordsResult> {
+  const supabase = createClient();
+  const { data, error } = await (supabase.rpc as any)('purge_old_records_4months');
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return data as PurgeRecordsResult;
+}
+
+export async function logAuditEvent(
+  action: string,
+  details: Record<string, any> = {},
+  bookingId?: number | null,
+  actor?: string
+): Promise<{ ok: boolean; id?: number; error?: string }> {
+  const supabase = createClient();
+  const { data, error } = await (supabase.rpc as any)('log_audit_event', {
+    p_action: action,
+    p_details: details,
+    p_booking_id: bookingId || null,
+    p_actor: actor || null,
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return data as { ok: boolean; id?: number };
+}
+
+

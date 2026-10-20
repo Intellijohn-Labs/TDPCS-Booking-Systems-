@@ -56,6 +56,7 @@ export async function POST(request: Request) {
         if (res.error) {
           return NextResponse.json({ error: res.error }, { status: 400 });
         }
+        await logUserAudit(user.email || user.id, 'admin:create_user', { email, fullName, role, userId: res.user?.id });
         return NextResponse.json({ ok: true, user: res.user });
       }
 
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
         if (res.error) {
           return NextResponse.json({ error: res.error }, { status: 400 });
         }
+        await logUserAudit(user.email || user.id, 'admin:reset_password', { userId });
         return NextResponse.json({ ok: true });
       }
 
@@ -86,6 +88,7 @@ export async function POST(request: Request) {
         if (res.error) {
           return NextResponse.json({ error: res.error }, { status: 400 });
         }
+        await logUserAudit(user.email || user.id, 'admin:toggle_user_active', { userId, active });
         return NextResponse.json({ ok: true });
       }
 
@@ -104,6 +107,7 @@ export async function POST(request: Request) {
         if (res.error) {
           return NextResponse.json({ error: res.error }, { status: 400 });
         }
+        await logUserAudit(user.email || user.id, 'admin:delete_user', { userId });
         return NextResponse.json({ ok: true });
       }
 
@@ -149,6 +153,7 @@ export async function POST(request: Request) {
               role,
               active: true,
             });
+            await logUserAudit(user.email || user.id, 'admin:create_user', { email, fullName, role, userId: newUser.user.id });
             return NextResponse.json({ ok: true, user: newUser.user });
           }
         } catch {
@@ -158,6 +163,7 @@ export async function POST(request: Request) {
 
       // Postgres direct pool
       const result = await createUserPg(email, password, fullName, role);
+      await logUserAudit(user.email || user.id, 'admin:create_user', { email, fullName, role, userId: result.id });
       return NextResponse.json({ ok: true, user: { id: result.id, email } });
     }
 
@@ -176,6 +182,7 @@ export async function POST(request: Request) {
             password: newPassword,
           });
           if (!updateError) {
+            await logUserAudit(user.email || user.id, 'admin:reset_password', { userId });
             return NextResponse.json({ ok: true });
           }
         } catch {
@@ -184,6 +191,7 @@ export async function POST(request: Request) {
       }
 
       await resetUserPasswordPg(userId, newPassword);
+      await logUserAudit(user.email || user.id, 'admin:reset_password', { userId });
       return NextResponse.json({ ok: true });
     }
 
@@ -210,6 +218,7 @@ export async function POST(request: Request) {
             .update({ active })
             .eq('id', userId);
           if (!updateError) {
+            await logUserAudit(user.email || user.id, 'admin:toggle_user_active', { userId, active });
             return NextResponse.json({ ok: true });
           }
         } catch {
@@ -218,6 +227,7 @@ export async function POST(request: Request) {
       }
 
       await toggleUserActivePg(userId, active);
+      await logUserAudit(user.email || user.id, 'admin:toggle_user_active', { userId, active });
       return NextResponse.json({ ok: true });
     }
 
@@ -241,6 +251,7 @@ export async function POST(request: Request) {
           });
           await adminClient.auth.admin.deleteUser(userId);
           await adminClient.from('profiles').delete().eq('id', userId);
+          await logUserAudit(user.email || user.id, 'admin:delete_user', { userId });
           return NextResponse.json({ ok: true });
         } catch {
           // fallback to PG
@@ -248,11 +259,34 @@ export async function POST(request: Request) {
       }
 
       await deleteUserPg(userId);
+      await logUserAudit(user.email || user.id, 'admin:delete_user', { userId });
       return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+  }
+}
+
+async function logUserAudit(actor: string, action: string, details: Record<string, any>) {
+  try {
+    if (isSqliteMode()) {
+      const { getDb } = await import('@/lib/db/sqlite');
+      const db = getDb();
+      db.prepare(`
+        INSERT INTO audit_log (actor, action, details)
+        VALUES (?, ?, ?)
+      `).run(actor, action, JSON.stringify(details));
+    } else {
+      const serverSupabase = createServerSupabase();
+      await (serverSupabase.rpc as any)('log_audit_event', {
+        p_action: action,
+        p_details: details,
+        p_actor: actor,
+      });
+    }
+  } catch (err) {
+    console.error('Failed to log user audit:', err);
   }
 }

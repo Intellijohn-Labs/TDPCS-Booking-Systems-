@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Database } from '@/types/database';
-import { blockDay, autoGenerateOpenDays } from '@/lib/staff-api';
+import { blockDay, autoGenerateOpenDays, logAuditEvent } from '@/lib/staff-api';
 import {
   formatSlotDate,
   formatSlotTime,
@@ -158,6 +158,11 @@ export default function AdminCalendarPage() {
       if (!res.ok) {
         setAutoError(res.error || 'Failed to auto-generate dates');
       } else {
+        await logAuditEvent('admin:auto_generate_calendar', {
+          days_ahead: daysToGenerate,
+          days_inserted: res.days_inserted || 0,
+          dows,
+        });
         setAutoNotice(
           `Calendar successfully updated! Added ${res.days_inserted || 0} open dates across next ${daysToGenerate} days.`
         );
@@ -252,6 +257,13 @@ export default function AdminCalendarPage() {
       if (error) {
         setFormError(error.message);
       } else {
+        await logAuditEvent('admin:save_day', {
+          day: formDate,
+          status: formStatus,
+          s1: `${formS1Start}-${formS1End}`,
+          s2: formHasS2 ? `${formS2Start}-${formS2End}` : null,
+          note: formNote.trim() || null,
+        });
         setModalOpen(false);
         await loadData(false);
       }
@@ -280,7 +292,10 @@ export default function AdminCalendarPage() {
         .update as any)({ status: 'open', note: null })
         .eq('day', d.day);
       if (error) alert(error.message);
-      else await loadData(false);
+      else {
+        await logAuditEvent('admin:unblock_day', { day: d.day });
+        await loadData(false);
+      }
     }
   };
 
@@ -305,6 +320,7 @@ export default function AdminCalendarPage() {
       if (error) {
         alert(error.message);
       } else {
+        await logAuditEvent('admin:delete_day', { day: d.day });
         await loadData(false);
       }
     } catch (err: any) {
