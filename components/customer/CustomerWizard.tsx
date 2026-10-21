@@ -286,8 +286,8 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
       <header className="bg-white border-b border-slate-200 py-3.5 px-4 sticky top-0 z-20 shadow-xs">
         <div className="max-w-md mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-800 text-white flex items-center justify-center font-bold text-lg shadow-sm">
-              T
+            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/90 shadow-xs p-1 flex items-center justify-center flex-shrink-0">
+              <img src="/logo.png" alt="TDPCS Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-none">

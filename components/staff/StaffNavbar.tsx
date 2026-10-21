@@ -103,8 +103,8 @@ export default function StaffNavbar({ user }: StaffNavbarProps) {
       {/* Mobile Top Bar */}
       <div className="md:hidden bg-white border-b border-slate-200 sticky top-0 z-40 px-4 h-14 flex items-center justify-between shadow-xs">
         <Link href="/app/dashboard" className="flex items-center space-x-2.5">
-          <div className="w-8 h-8 rounded-lg bg-emerald-800 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-            T
+          <div className="w-8 h-8 rounded-lg bg-white border border-slate-200/90 shadow-xs p-0.5 flex items-center justify-center flex-shrink-0">
+            <img src="/logo.png" alt="TDPCS Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <span className="font-bold text-slate-900 tracking-tight text-sm leading-none block">
@@ -133,8 +133,8 @@ export default function StaffNavbar({ user }: StaffNavbarProps) {
               {/* Header */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                 <div className="flex items-center space-x-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-800 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-                    T
+                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200/90 shadow-xs p-0.5 flex items-center justify-center flex-shrink-0">
+                    <img src="/logo.png" alt="TDPCS Logo" className="w-full h-full object-contain" />
                   </div>
                   <div>
                     <span className="font-bold text-slate-900 tracking-tight text-sm leading-none block">
@@ -214,8 +214,8 @@ export default function StaffNavbar({ user }: StaffNavbarProps) {
           {/* Brand Logo & Name */}
           <div className="p-5 border-b border-slate-200/80">
             <Link href="/app/dashboard" className="flex items-center space-x-3 group">
-              <div className="w-10 h-10 rounded-xl bg-emerald-800 text-white flex items-center justify-center font-bold text-xl shadow-sm group-hover:bg-emerald-900 transition flex-shrink-0">
-                T
+              <div className="w-11 h-11 rounded-xl bg-white border border-slate-200/90 shadow-xs p-1 flex items-center justify-center flex-shrink-0 group-hover:border-emerald-300 transition">
+                <img src="/logo.png" alt="TDPCS Logo" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col min-w-0">
                 <span className="font-extrabold text-slate-900 tracking-tight text-base leading-tight block">

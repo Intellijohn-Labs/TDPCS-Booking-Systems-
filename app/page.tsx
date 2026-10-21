@@ -7,8 +7,8 @@ export default function HomePage() {
       <header className="bg-white border-b border-slate-200 py-4 px-6 shadow-sm">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-800 flex items-center justify-center text-white font-bold text-xl shadow-inner">
-              T
+            <div className="w-11 h-11 rounded-xl bg-white border border-slate-200/90 shadow-xs p-1 flex items-center justify-center flex-shrink-0">
+              <img src="/logo.png" alt="TDPCS Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="font-bold text-slate-800 text-lg leading-tight">TDPCS-Apt</h1>

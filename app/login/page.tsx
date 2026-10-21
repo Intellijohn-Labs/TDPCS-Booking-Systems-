@@ -68,8 +68,8 @@ function LoginForm() {
     <div className="w-full max-w-md">
       {/* Header Branding */}
       <div className="text-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-emerald-800 text-white flex items-center justify-center font-bold text-2xl mx-auto shadow-md mb-3">
-          T
+        <div className="w-20 h-20 rounded-2xl bg-white border border-slate-200/90 shadow-sm p-1.5 mx-auto mb-3 flex items-center justify-center">
+          <img src="/logo.png" alt="TDPCS Logo" className="w-full h-full object-contain" />
         </div>
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">TDPCS-Apt Staff Portal</h1>
         <p className="text-xs text-slate-500 mt-1">
