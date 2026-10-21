@@ -732,7 +732,7 @@ export function executeRpc(functionName: string, args: any = {}): any {
   }
 
   if (functionName === 'auto_generate_open_days') {
-    const { p_days_ahead = 60, p_working_dows = [2, 4, 6] } = args;
+    const { p_days_ahead = 60, p_working_dows = [1, 2, 3, 4, 5, 6] } = args;
     return autoGenerateOpenDaysSqlite(db, p_days_ahead, p_working_dows);
   }
 
@@ -775,7 +775,7 @@ export function executeRpc(functionName: string, args: any = {}): any {
 function autoGenerateOpenDaysSqlite(
   db: any,
   daysAhead: number = 60,
-  workingDows: number[] = [2, 4, 6]
+  workingDows: number[] = [1, 2, 3, 4, 5, 6]
 ) {
   const insertDay = db.prepare(`
     INSERT OR IGNORE INTO open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)

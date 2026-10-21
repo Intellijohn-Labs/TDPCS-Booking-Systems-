@@ -63,7 +63,7 @@ export default function AdminCalendarPage() {
   // Auto-Generate Modal state
   const [autoModalOpen, setAutoModalOpen] = useState(false);
   const [autoPreset, setAutoPreset] = useState<'standard' | 'weekdays' | 'full_week' | 'custom'>('standard');
-  const [selectedDows, setSelectedDows] = useState<number[]>([2, 4, 6]); // default Tue, Thu, Sat
+  const [selectedDows, setSelectedDows] = useState<number[]>([1, 2, 3, 4, 5, 6]); // default Mon - Sat
   const [autoHorizon, setAutoHorizon] = useState<number>(60);
   const [autoGenerating, setAutoGenerating] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
@@ -88,7 +88,7 @@ export default function AdminCalendarPage() {
       // If there are fewer than 5 future open days on initial load, auto-generate the next 60 days!
       const openCount = loadedDays.filter((d) => d.status === 'open').length;
       if (isInitial && openCount < 5) {
-        const res = await autoGenerateOpenDays(60, [2, 4, 6]);
+        const res = await autoGenerateOpenDays(60, [1, 2, 3, 4, 5, 6]);
         if (res.ok && (res.days_inserted || 0) > 0) {
           setAutoNotice(`Auto-generated ${res.days_inserted} dates for upcoming weeks.`);
           // Reload refreshed days
@@ -129,12 +129,10 @@ export default function AdminCalendarPage() {
   // Preset changer for Auto-Generate
   const handlePresetChange = (preset: 'standard' | 'weekdays' | 'full_week' | 'custom') => {
     setAutoPreset(preset);
-    if (preset === 'standard') {
-      setSelectedDows([2, 4, 6]); // Tue, Thu, Sat
+    if (preset === 'standard' || preset === 'full_week') {
+      setSelectedDows([1, 2, 3, 4, 5, 6]); // Mon - Sat (TDPCS standard)
     } else if (preset === 'weekdays') {
       setSelectedDows([1, 2, 3, 4, 5]); // Mon - Fri
-    } else if (preset === 'full_week') {
-      setSelectedDows([1, 2, 3, 4, 5, 6]); // Mon - Sat
     }
   };
 
@@ -152,7 +150,7 @@ export default function AdminCalendarPage() {
     setAutoGenerating(true);
     setAutoError(null);
     try {
-      const dows = selectedDows.length > 0 ? selectedDows : [2, 4, 6];
+      const dows = selectedDows.length > 0 ? selectedDows : [1, 2, 3, 4, 5, 6];
       const res = await autoGenerateOpenDays(daysToGenerate, dows);
 
       if (!res.ok) {
