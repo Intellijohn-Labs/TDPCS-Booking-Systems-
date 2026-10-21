@@ -56,7 +56,8 @@ grant execute on function auto_generate_open_days(int, int[]) to anon;
 grant execute on function auto_generate_open_days(int, int[]) to service_role;
 
 -- 2. Update customer_init to automatically ensure open days exist if upcoming days are sparse
-create or replace function customer_init(p_token uuid) returns jsonb
+drop function if exists customer_init(uuid);
+create or replace function customer_init(p_token text) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   l booking_links%rowtype;

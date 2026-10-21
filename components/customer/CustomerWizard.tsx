@@ -368,6 +368,7 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
   }
 
   if (initError) {
+    const isExpired = initError === 'link_expired';
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
         {renderHeader()}
@@ -375,10 +376,25 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
           <div className="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-5">
             <XCircle className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-900">{strings.expiredTitle}</h2>
+          <h2 className="text-xl font-bold text-slate-900">
+            {isExpired ? strings.expiredTitle : 'Unable to Load Session'}
+          </h2>
           <p className="text-sm text-slate-600 mt-3 leading-relaxed">
-            {strings.expiredMessage}
+            {isExpired
+              ? strings.expiredMessage
+              : 'There was an issue connecting to your booking session. Please try refreshing or check your connection.'}
           </p>
+
+          {!isExpired && (
+            <button
+              onClick={() => loadInitData()}
+              className="mt-5 inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-xs transition shadow-xs"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Retry Connection</span>
+            </button>
+          )}
+
           <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 text-left w-full space-y-2">
             <div className="font-semibold text-slate-700">Security Notice</div>
             <p>
