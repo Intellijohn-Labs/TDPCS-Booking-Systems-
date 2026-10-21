@@ -74,6 +74,8 @@ export const dictionary = {
         'A confirmation message with your token and reporting details has been sent to your WhatsApp.',
       strictArrivalWarning:
         'Arriving after your slot start time automatically cancels the booking; you may then take a manual paper token at Counter 3/Manual Desk.',
+      suretyNotice:
+        'For loans requiring sureties’ signatures, the sureties must sign the documents before the allotted token time.',
       viewMyBookings: 'View My Bookings',
       bookAnotherSlot: 'Book Another Slot',
 

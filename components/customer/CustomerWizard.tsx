@@ -40,6 +40,7 @@ import {
   XCircle,
   Building2,
   Lock,
+  FileText,
 } from 'lucide-react';
 
 interface CustomerWizardProps {
@@ -1018,6 +1019,12 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                 </ul>
               </div>
             </div>
+
+            {/* Surety Notice Reminder */}
+            <div className="flex items-start space-x-2.5 text-blue-900 bg-blue-50/90 border border-blue-200/80 p-3.5 rounded-2xl text-xs text-left leading-relaxed">
+              <FileText className="w-4 h-4 text-blue-700 flex-shrink-0 mt-0.5" />
+              <span>{strings.suretyNotice}</span>
+            </div>
           </div>
         )}
 
@@ -1072,8 +1079,8 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
               </div>
             </div>
 
-            {/* Strict notice */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 text-left text-xs text-slate-600 space-y-2">
+            {/* Strict notice & Surety Requirement */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 text-left text-xs text-slate-600 space-y-2.5">
               <div className="flex items-center space-x-2 text-emerald-800 font-semibold">
                 <ShieldCheck className="w-4 h-4" />
                 <span>{strings.whatsappSentNotice}</span>
@@ -1081,6 +1088,10 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
               <p className="text-amber-800 text-[11px] leading-relaxed bg-amber-50 p-2.5 rounded-lg border border-amber-200">
                 {strings.strictArrivalWarning}
               </p>
+              <div className="flex items-start space-x-2 text-blue-900 bg-blue-50/90 p-2.5 rounded-lg border border-blue-200 text-[11px] leading-relaxed">
+                <FileText className="w-4 h-4 text-blue-700 flex-shrink-0 mt-0.5" />
+                <span>{strings.suretyNotice}</span>
+              </div>
             </div>
 
             <div className="pt-2">
