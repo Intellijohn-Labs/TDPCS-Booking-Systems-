@@ -24,6 +24,7 @@ import {
   addMinutesToTimestamp,
 } from '@/lib/date-utils';
 import { getStrings } from '@/lib/i18n';
+import CustomerDatePicker from './CustomerDatePicker';
 import {
   Calendar,
   Clock,
@@ -680,65 +681,20 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
 
         {/* SCREEN 2: DATE */}
         {step === 2 && (
-          <div className="space-y-4 animate-in fade-in duration-200">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">{strings.dateTitle}</h2>
-              <p className="text-xs text-slate-500 mt-1">{strings.dateSubtitle}</p>
-            </div>
-
+          <div className="animate-in fade-in duration-200">
             {!initData?.dates || initData.dates.length === 0 ? (
               <div className="p-8 text-center bg-white rounded-2xl border border-slate-200">
                 <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                 <p className="text-sm font-medium text-slate-600">{strings.noDatesAvailable}</p>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {initData.dates.map((d: CustomerOpenDay) => {
-                  const isSelected = selectedDay === d.day;
-                  return (
-                    <button
-                      key={d.day}
-                      onClick={() => handleDaySelect(d.day)}
-                      type="button"
-                      className={`w-full min-h-[56px] text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
-                        isSelected
-                          ? 'border-emerald-800 bg-emerald-50/80 ring-2 ring-emerald-800 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-start space-x-3.5">
-                        <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            isSelected
-                              ? 'bg-emerald-800 text-white'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          <Calendar className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <span className="font-bold text-sm text-slate-900 block">
-                            {formatSlotDate(d.day)}
-                          </span>
-                          <span className="text-[11px] text-slate-500 mt-0.5 block">
-                            {d.s1_start && d.s1_end ? `${formatSlotTime(d.s1_start)} - ${formatSlotTime(d.s1_end)}` : ''}
-                            {d.s2_start && d.s2_end ? ` & ${formatSlotTime(d.s2_start)} - ${formatSlotTime(d.s2_end)}` : ''}
-                          </span>
-                        </div>
-                      </div>
-                      <div
-                        className={`w-5 h-5 rounded-full border flex items-center justify-center ${
-                          isSelected
-                            ? 'border-emerald-800 bg-emerald-800 text-white'
-                            : 'border-slate-300 bg-white'
-                        }`}
-                      >
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              <CustomerDatePicker
+                title={strings.dateTitle}
+                subtitle={strings.dateSubtitle}
+                availableDates={initData.dates}
+                selectedDate={selectedDay}
+                onSelectDate={(day) => handleDaySelect(day)}
+              />
             )}
           </div>
         )}
@@ -1245,22 +1201,11 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
               <label className="block text-xs font-bold text-slate-700 mb-2">
                 1. Select New Date:
               </label>
-              <div className="space-y-2">
-                {initData?.dates?.map((d: CustomerOpenDay) => (
-                  <button
-                    key={d.day}
-                    type="button"
-                    onClick={() => loadRescheduleSlotsForDay(d.day)}
-                    className={`w-full text-left p-3 rounded-xl border text-xs font-medium transition ${
-                      rescheduleDay === d.day
-                        ? 'border-emerald-800 bg-emerald-50 text-emerald-900 font-bold ring-1 ring-emerald-800'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    {formatSlotDate(d.day)}
-                  </button>
-                ))}
-              </div>
+              <CustomerDatePicker
+                availableDates={initData?.dates || []}
+                selectedDate={rescheduleDay}
+                onSelectDate={(day) => loadRescheduleSlotsForDay(day)}
+              />
             </div>
 
             {/* Step 2 of Reschedule: Choose New Time */}

@@ -34,7 +34,7 @@ export const dictionary = {
 
       // Screen 2: Date
       dateTitle: 'Select Visit Date',
-      dateSubtitle: 'Choose from open booking dates (up to 15 days in advance)',
+      dateSubtitle: 'Choose your preferred visit date from the calendar below',
       noDatesAvailable: 'Booking is not open yet. Please check again later.',
       session1: 'Morning Session',
       session2: 'Afternoon Session',
