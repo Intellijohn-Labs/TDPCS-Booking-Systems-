@@ -76,11 +76,14 @@ export const dictionary = {
         'Arriving after your slot start time automatically cancels the booking; you may then take a manual paper token at Counter 3/Manual Desk.',
       suretyNotice:
         'For loans requiring sureties’ signatures, the sureties must sign the documents before the allotted token time.',
+      emergencyLoanPaySlipNotice: 'Bring pay slip for Emergency Loan.',
       viewMyBookings: 'View My Bookings',
       bookAnotherSlot: 'Book Another Slot',
 
       // Errors
       slotTaken: 'That time was just taken. Please choose another available slot.',
+      slotCutoffPassed:
+        'This slot is no longer available. Same-day slots must be booked at least 30 minutes in advance.',
       alreadyBooked:
         'You already have an active booking on this date. Only one active booking is permitted per day.',
       dayClosed: 'The selected date is no longer open for booking.',

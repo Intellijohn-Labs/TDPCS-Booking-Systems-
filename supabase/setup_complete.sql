@@ -116,7 +116,7 @@ language sql stable security definer set search_path = public as $$
   ),
   cfg as (
     select coalesce((select value::int from settings where key='slot_step'), 5) as stp,
-           coalesce((select value::int from settings where key='report_buffer'), 10) as buf
+           greatest(coalesce((select value::int from settings where key='report_buffer'), 10), 30) as buf
   ),
   sessions as (
     select p_day + s1_start as st, p_day + s1_end as en from d where s1_start is not null
@@ -162,6 +162,11 @@ begin
 
   perform 1 from open_days where day = p_day and status = 'open' for update;
   if not found then return jsonb_build_object('ok', false, 'error', 'day_closed'); end if;
+
+  -- 30-minute advance cutoff rule
+  if p_start <= (now() at time zone 'Asia/Kolkata') + interval '30 minutes' then
+    return jsonb_build_object('ok', false, 'error', 'slot_cutoff_passed');
+  end if;
 
   if exists (select 1 from bookings where mobile = p_mobile and day = p_day
                and status in ('booked', 'arrived', 'called')
@@ -321,7 +326,7 @@ begin
                and tsrange(b.slot_start, b.slot_end) && tsrange(cand.st, cand.en)) as c1_booked,
       exists(select 1 from bookings b where b.counter = 2 and b.status in ('booked', 'arrived', 'called')
                and tsrange(b.slot_start, b.slot_end) && tsrange(cand.st, cand.en)) as c2_booked,
-      cand.st < (now() at time zone 'Asia/Kolkata') as is_past
+      cand.st <= (now() at time zone 'Asia/Kolkata') + make_interval(mins => greatest(coalesce((select value::int from settings where key='report_buffer'), 10), 30)) as is_past
     from cand
   )
   select coalesce(jsonb_agg(

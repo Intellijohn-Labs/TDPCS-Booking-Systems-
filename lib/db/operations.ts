@@ -278,7 +278,7 @@ export function calculateAvailableSlots(day: string, durationMinutes: number): {
         continue;
       }
 
-      const isPast = day === todayIST && cur <= nowISTMinutes + reportBuffer;
+      const isPast = day === todayIST && cur <= nowISTMinutes + Math.max(reportBuffer, 30);
 
       const curH = Math.floor(cur / 60).toString().padStart(2, '0');
       const curM = (cur % 60).toString().padStart(2, '0');
@@ -480,6 +480,15 @@ export function executeRpc(functionName: string, args: any = {}): any {
     `).get(link.mobile, day);
     if (existingActive) {
       return { ok: false, error: 'already_booked' };
+    }
+
+    const todayIST = getTodayIST();
+    const now = new Date();
+    const nowISTMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
+    const [startHCheck, startMCheck] = p_start.split('T')[1].split(':').map(Number);
+    const startMinsCheck = startHCheck * 60 + startMCheck;
+    if (day === todayIST && startMinsCheck <= nowISTMinutes + 30) {
+      return { ok: false, error: 'slot_cutoff_passed' };
     }
 
     const { availableSlots } = calculateAvailableSlots(day, minutes);

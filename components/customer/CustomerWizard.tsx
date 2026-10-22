@@ -124,6 +124,27 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
     return sum + (prod ? prod.minutes : 0);
   }, 0);
 
+  // Check if a product is Emergency Loan
+  const isEmergencyLoan = (prod?: { id: number; name?: string }) => {
+    if (!prod) return false;
+    return prod.id === 2 || (prod.name ? prod.name.toLowerCase().includes('emergency') : false);
+  };
+
+  const hasEmergencyLoanSelected = selectedProductIds.some((id) => {
+    if (id === 2) return true;
+    const p = initData?.products?.find((prod) => prod.id === id);
+    return isEmergencyLoan(p);
+  });
+
+  const bookingHasEmergencyLoan = (b?: CustomerExistingBooking | null) => {
+    if (!b?.product_ids || !Array.isArray(b.product_ids)) return false;
+    return b.product_ids.some((id) => {
+      if (id === 2) return true;
+      const p = initData?.products?.find((prod) => prod.id === id);
+      return isEmergencyLoan(p);
+    });
+  };
+
   // Fetch slots when day or selectedProductIds change
   const loadSlots = async (dayStr: string, prodIds: number[]) => {
     if (!dayStr || prodIds.length === 0) return;
@@ -181,8 +202,12 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
         setSuccessBooking(res);
         setStep(6); // Success screen
       } else {
-        if (res.error === 'slot_taken') {
-          setSubmitError(strings.slotTaken);
+        if (res.error === 'slot_taken' || res.error === 'slot_cutoff_passed') {
+          setSubmitError(
+            res.error === 'slot_cutoff_passed'
+              ? strings.slotCutoffPassed
+              : strings.slotTaken
+          );
           setStep(4);
           loadSlots(selectedDay, selectedProductIds);
         } else if (res.error === 'already_booked') {
@@ -265,8 +290,12 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
         await loadInitData();
         setStep('manage');
       } else {
-        if (res.error === 'slot_taken') {
-          setRescheduleError(strings.rescheduleError);
+        if (res.error === 'slot_taken' || res.error === 'slot_cutoff_passed') {
+          setRescheduleError(
+            res.error === 'slot_cutoff_passed'
+              ? strings.slotCutoffPassed
+              : strings.rescheduleError
+          );
           // reload slots
           if (rescheduleDay) loadRescheduleSlotsForDay(rescheduleDay);
         } else {
@@ -718,6 +747,17 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
               </span>
             </div>
 
+            {/* Emergency Loan Pay Slip Reminder */}
+            {hasEmergencyLoanSelected && (
+              <div className="flex items-start space-x-2.5 text-amber-900 bg-amber-50 border border-amber-200/90 p-3.5 rounded-2xl text-xs text-left leading-relaxed shadow-2xs">
+                <FileText className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-amber-950">Emergency Loan Reminder:</span>
+                  <span>{strings.emergencyLoanPaySlipNotice}</span>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2.5">
               {initData?.products?.map((prod: CustomerProduct) => {
                 const isChecked = selectedProductIds.includes(prod.id);
@@ -733,12 +773,24 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                     }`}
                   >
                     <div>
-                      <span className="font-semibold text-sm text-slate-900 block">
-                        {prod.name}
-                      </span>
+                      <div className="flex items-center space-x-1.5 flex-wrap">
+                        <span className="font-semibold text-sm text-slate-900">
+                          {prod.name}
+                        </span>
+                        {isEmergencyLoan(prod) && (
+                          <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200">
+                            Pay Slip Required
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs text-emerald-700 font-medium mt-0.5 block">
                         {prod.minutes} {strings.minutes}
                       </span>
+                      {isEmergencyLoan(prod) && (
+                        <span className="text-[11px] text-amber-800 font-medium block mt-1">
+                          📄 {strings.emergencyLoanPaySlipNotice}
+                        </span>
+                      )}
                     </div>
                     <div
                       className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
@@ -976,6 +1028,17 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
               </div>
             </div>
 
+            {/* Emergency Loan Pay Slip Reminder */}
+            {hasEmergencyLoanSelected && (
+              <div className="flex items-start space-x-2.5 text-amber-900 bg-amber-50 border border-amber-200/90 p-3.5 rounded-2xl text-xs text-left leading-relaxed">
+                <FileText className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-amber-950">Emergency Loan Requirement:</span>
+                  <span>{strings.emergencyLoanPaySlipNotice}</span>
+                </div>
+              </div>
+            )}
+
             {/* Surety Notice Reminder */}
             <div className="flex items-start space-x-2.5 text-blue-900 bg-blue-50/90 border border-blue-200/80 p-3.5 rounded-2xl text-xs text-left leading-relaxed">
               <FileText className="w-4 h-4 text-blue-700 flex-shrink-0 mt-0.5" />
@@ -1041,6 +1104,15 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                 <ShieldCheck className="w-4 h-4" />
                 <span>{strings.whatsappSentNotice}</span>
               </div>
+              {hasEmergencyLoanSelected && (
+                <div className="flex items-start space-x-2 text-amber-950 bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-[11px] leading-relaxed">
+                  <FileText className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Emergency Loan Reminder:</span>
+                    <span>{strings.emergencyLoanPaySlipNotice}</span>
+                  </div>
+                </div>
+              )}
               <p className="text-amber-800 text-[11px] leading-relaxed bg-amber-50 p-2.5 rounded-lg border border-amber-200">
                 {strings.strictArrivalWarning}
               </p>
@@ -1141,6 +1213,16 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                       </div>
                     </div>
 
+                    {bookingHasEmergencyLoan(b) && (
+                      <div className="flex items-start space-x-2 text-amber-900 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-[11px] leading-relaxed">
+                        <FileText className="w-3.5 h-3.5 text-amber-700 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold block text-amber-950">Emergency Loan Reminder:</span>
+                          <span>{strings.emergencyLoanPaySlipNotice}</span>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
                       <button
                         type="button"
@@ -1195,6 +1277,16 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
               <div>Date: {formatSlotDate(bookingToReschedule.day)}</div>
               <div>Time: {formatSlotRange(bookingToReschedule.slot_start, bookingToReschedule.slot_end)}</div>
             </div>
+
+            {bookingHasEmergencyLoan(bookingToReschedule) && (
+              <div className="flex items-start space-x-2 text-amber-900 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-[11px] leading-relaxed">
+                <FileText className="w-3.5 h-3.5 text-amber-700 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-amber-950">Emergency Loan Reminder:</span>
+                  <span>{strings.emergencyLoanPaySlipNotice}</span>
+                </div>
+              </div>
+            )}
 
             {/* Step 1 of Reschedule: Choose New Date */}
             <div>
