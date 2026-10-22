@@ -1,200 +1,480 @@
-# TDPCS-Apt Web Application
+# TDPCS-Apt Web Application & VPS Deployment Guide
 
-**TDPCS-Apt** is an automated pre-token counter slot booking system built for **Thrissur District Police Co-operative Society (TDPCS)**. It enables cooperative society members to reserve counter visit slots via verified WhatsApp links, and equips branch staff with a realtime queue terminal, live monitoring dashboard, and operational administrative tools.
+**TDPCS-Apt** is an automated pre-token counter slot booking and queue management system developed for **Thrissur District Police Co-operative Society (TDPCS)**. 
+
+The platform allows cooperative society members to reserve counter visit slots via verified WhatsApp links without requiring user registration. It equips branch staff with a realtime dual-counter workstation, live monitoring dashboard, automated calendar generation, complete administrative audit trail, and automated 4-month data retention.
+
+---
+
+## Table of Contents
+1. [System Architecture](#1-system-architecture)
+2. [Technology Stack](#2-technology-stack)
+3. [VPS Production Migration & Deployment Guide](#3-vps-production-migration--deployment-guide)
+   - [3.1 Prerequisites & Server Requirements](#31-prerequisites--server-requirements)
+   - [3.2 Step 1: Server Setup & Firewall Configuration](#32-step-1-server-setup--firewall-configuration)
+   - [3.3 Step 2: Install Node.js 20 LTS & PM2](#33-step-2-install-nodejs-20-lts--pm2)
+   - [3.4 Step 3: Clone Repository](#34-step-3-clone-repository)
+   - [3.5 Step 4: Configure Production Environment Variables](#35-step-4-configure-production-environment-variables)
+   - [3.6 Step 5: Install Dependencies & Build Application](#36-step-5-install-dependencies--build-application)
+   - [3.7 Step 6: Start Next.js with PM2 Cluster](#37-step-6-start-nextjs-with-pm2-cluster)
+   - [3.8 Step 7: Configure Nginx Reverse Proxy](#38-step-7-configure-nginx-reverse-proxy)
+   - [3.9 Step 8: Secure with Free Let's Encrypt SSL (HTTPS)](#39-step-8-secure-with-free-lets-encrypt-ssl-https)
+   - [3.10 Step 9: Post-Migration Integration Checklist](#310-step-9-post-migration-integration-checklist)
+4. [Zero-Downtime Updates & Maintenance](#4-zero-downtime-updates--maintenance)
+5. [Database Architecture & Retention Policy](#5-database-architecture--retention-policy)
+6. [n8n WhatsApp Workflow Integration](#6-n8n-whatsapp-workflow-integration)
+7. [Troubleshooting & Common Questions](#7-troubleshooting--common-questions)
 
 ---
 
 ## 1. System Architecture
 
-The application is decoupled into two primary components:
+The application comprises three tightly integrated layers:
 
-1. **Customer Booking Portal (`/b/[token]`)**
-   - **No login required**: Access is granted exclusively through cryptographically secure, time-limited UUID links created by n8n.
-   - **Security model**: The `anon` role is strictly restricted via Postgres permissions. It cannot read or modify any tables directly. Only 5 whitelisted RPC functions (`customer_init`, `customer_slots`, `customer_book`, `customer_cancel`, `customer_reschedule`) can be executed.
-   - **Verified WhatsApp Identity**: Mobile numbers are resolved internally inside Postgres from `booking_links`. The browser client **never** supplies the phone number.
-   - **Mobile-first WhatsApp in-app browser design**: Optimized for 360px screen width, large touch targets (≥48px), sticky action bar, calm banking theme, zero external popups.
+```mermaid
+flowchart TD
+    WA["Member on WhatsApp"] -->|Sends Member / PEN No.| N8N["n8n Automation Engine"]
+    N8N -->|1. Verifies Member Roster| GS["Member Directory"]
+    N8N -->|2. Inserts Secure Token| PG["PostgreSQL (Supabase)"]
+    N8N -->|3. Sends https://domain.com/b/:token| WA
+    WA -->|Opens in Browser| WEB["TDPCS Customer Portal (/b/:token)"]
+    WEB -->|Selects Services & Slots| PG
+    PG -->|Trigger: trg_notify_n8n| N8N
+    N8N -->|Booking Confirmation WhatsApp Msg| WA
+    STAFF["Branch Staff & Admin"] -->|Login (/login)| PORTAL["Staff & Admin Portal (/app/*)"]
+    PORTAL -->|Live Queue & Counter Management| PG
+    CRON["Daily Cron (02:00 AM IST)"] -->|Auto-Generates Days & 4M Retention Purge| PG
+```
 
-2. **Staff & Admin Management Portal (`/app/*`)**
-   - **Authentication**: Supabase Auth (email + password) with secure cookies handled by `@supabase/ssr`.
-   - **Role-Based Access Control**: `staff` and `admin` roles stored in `profiles`. Role enforcement is handled by Postgres RLS (`is_staff()`, `is_admin()`) and Next.js middleware guards.
-   - **Live Monitor (`/app/dashboard`)**: Dual-counter columns, utilisation metrics, Realtime Supabase websocket subscription with 15s fallback polling.
-   - **Queue Desk (`/app/queue`)**: Counter operator workstation with quick action buttons (`Arrived`, `Call`, `Served`, `Extend`, `Cancel`, `No-show`, `Call Next`, `Block Date`).
-   - **Bookings Master (`/app/bookings`)**: Filterable appointments table with audit drawer and CSV export.
-   - **Admin Management**: Calendar & session hours, loan services master, system timing parameters, staff accounts (Edge Function powered), and analytics reports.
+### 1.1 Customer Booking Portal (`/b/[token]`)
+- **Zero Registration Needed**: Members access the booking wizard directly through single-use, time-limited tokens generated by n8n.
+- **Cryptographic Security**: Tokens are standard 128-bit UUIDv4 identifiers. The browser client cannot tamper with or supply phone numbers; the member's verified WhatsApp identity is resolved internally inside Postgres.
+- **Mobile-First Experience**: Optimized for WhatsApp in-app browser viewports (360px+), touch-friendly targets, high contrast, official TDPCS branding, and clear guidance.
+- **Surety Requirements**: Notifies members in advance that for loan schemes requiring sureties' signatures, sureties must sign documents prior to the allotted counter time.
 
-3. **External n8n WhatsApp Integration**
-   - All WhatsApp messaging is processed externally by n8n.
-   - When database booking events occur (`booked`, `rescheduled`, `cancelled`, `no_show`, `time_changed`), a Postgres trigger fires an asynchronous HTTP request using `pg_net` (`net.http_post`) to `n8n_webhook_url`.
+### 1.2 Staff & Admin Management Portal (`/app/*`)
+- **Live Monitor (`/app/dashboard`)**: Dual-counter activity, real-time ticket progress, and utilization metrics.
+- **Queue Desk (`/app/queue`)**: Counter operator interface with quick actions (`Arrived`, `Call`, `Served`, `Extend`, `Cancel`, `No-show`, `Block Date`).
+- **Bookings Master (`/app/bookings`)**: Searchable and filterable appointments table with detailed audit drawer and CSV export.
+- **Admin Tools**:
+  - **Calendar & Hours (`/app/admin/calendar`)**: Working day manager with standard hours (Session 1: 10:10 AM – 12:30 PM, Session 2: 02:00 PM – 05:00 PM) and rolling auto-generator.
+  - **Services Master (`/app/admin/products`)**: Loan schemes configuration with duration and ordering.
+  - **Branch Settings (`/app/admin/settings`)**: Slot steps, arrival buffer, advance booking horizon (default 30 days), and webhook URLs.
+  - **Accounts (`/app/admin/users`)**: Staff profile creation, deactivation, and password reset.
+  - **Audit Log (`/app/admin/audit`)**: Immutable log of all administrative actions, booking lifecycle events, and 4-month retention status with manual purge triggers.
+  - **Reports & Analytics (`/app/admin/reports`)**: Service volume breakdown, peak hour distribution, and exportable data.
 
 ---
 
-## 2. Tech Stack
+## 2. Technology Stack
 
-- **Frontend**: Next.js 14+ (App Router), TypeScript, Tailwind CSS, Lucide React icons, Recharts
-- **Backend**: Supabase (PostgreSQL 15+, Auth, Row Level Security, RPC Functions, Realtime, Supabase Edge Functions)
-- **Time Zone**: India Standard Time (**Asia/Kolkata**). Timestamps are stored as IST wall-clock strings without timezone drift (`timestamp`), formatted as `10:20 AM` and `10-10-2026 (Saturday)`.
-- **Internationalization (i18n)**: English UI by default, organized through a structured dictionary (`lib/i18n.ts`) for straightforward addition of Malayalam (`ml`).
+- **Application Framework**: [Next.js 14+](https://nextjs.org/) (App Router, Server Components & Client Components)
+- **Language**: TypeScript 5+
+- **Styling**: Tailwind CSS & Lucide React icons
+- **Process Management**: [PM2](https://pm2.keymetrics.io/) (Node.js cluster mode)
+- **Web Server / Reverse Proxy**: [Nginx](https://nginx.org/) with HTTP/2, Gzip, and WebSockets
+- **SSL / TLS**: Let's Encrypt with Certbot (automatic renewals)
+- **Database & Auth**: PostgreSQL 15+ (Hosted on Supabase or self-hosted) with RLS, exclusion constraints (`tsrange`), and stored procedures
+- **Integration Engine**: [n8n](https://n8n.io/) (WhatsApp API webhooks, auto-scheduling, daily calendar generation, daily 4-month data cleanup)
+- **Timezone**: India Standard Time (**Asia/Kolkata**, UTC+05:30)
 
 ---
 
-## 3. Database Setup & Migration Order
+## 3. VPS Production Migration & Deployment Guide
 
-### Step 1: Apply Migration
-Open the **Supabase SQL Editor** in your Supabase Dashboard and run:
-- `supabase/migrations/0001_tdpcs_apt.sql`
+This guide walks through migrating TDPCS-Apt from Vercel to an **Ubuntu 22.04 LTS / 24.04 LTS VPS** (Hostinger, DigitalOcean, Hetzner, AWS EC2, Linode, etc.).
 
-This migration creates:
-- PostgreSQL extensions (`btree_gist`, `pg_net`, `pg_cron`)
-- Core tables (`profiles`, `products`, `open_days`, `settings`, `token_counters`, `booking_links`, `bookings`, `audit_log`)
-- Exclusion constraint preventing double booking on Counter 1 and Counter 2:
-  ```sql
-  constraint no_overlap exclude using gist (
-    counter with =, tsrange(slot_start, slot_end) with &&
-  ) where (status in ('booked','arrived','called')) deferrable initially immediate
-  ```
-- Stored procedures: `get_available_slots`, `book_slot_internal`, `cancel_internal`, `reschedule_internal`, `customer_init`, `customer_slots`, `customer_book`, `customer_cancel`, `customer_reschedule`, `set_booking_status`, `extend_booking`, `block_day`, `no_show_sweep`
-- Notification trigger: `trg_notify_n8n`
-- RLS policies and `supabase_realtime` publication
+### 3.1 Prerequisites & Server Requirements
+- **Server Specifications**: Minimum 1 vCPU, 1 GB RAM (2 GB recommended), 20 GB SSD.
+- **Operating System**: Ubuntu 22.04 LTS or Ubuntu 24.04 LTS (recommended).
+- **Domain Name**: A domain or subdomain (e.g. `booking.tdpcs.coop` or `app.yourdomain.com`) with an **A Record** pointing to your VPS Public IP address.
+- **Root or Sudo Access**: SSH terminal access to your VPS.
 
-### Step 2: Seed Initial Data
-If you did not execute the seed portion of migration 0001, execute `supabase/seed.sql` in the SQL editor:
-- Seeds loan products: Simple Loan (20 min), Emergency Loan (5 min), Education Loan (5 min), Professional Edu. Loan (15 min), Vehicle Loan (20 min), Hire Purchase Loan (15 min), Chitty Prized Withdrawal (10 min).
-- Seeds settings (`slot_step=5`, `report_buffer=10`, `max_extension=30`, `advance_days=15`).
-- Seeds open days (Tuesday & Thursday 10:00-13:00, 14:00-15:00; Saturday 10:00-12:30).
+---
 
-### Step 3: Create the First Administrator
-1. In the Supabase Dashboard, navigate to **Authentication > Users** and click **Add User**.
-2. Create an admin user with email and password (e.g. `admin@tdpcs.coop`).
-3. Copy the generated `User UID` (`<AUTH_USER_UUID>`).
-4. In the Supabase SQL editor, grant the admin profile:
-   ```sql
-   insert into profiles (id, full_name, role, active)
-   values ('<AUTH_USER_UUID>', 'System Administrator', 'admin', true);
+### 3.2 Step 1: Server Setup & Firewall Configuration
+
+1. Connect to your VPS via SSH:
+   ```bash
+   ssh root@<YOUR_VPS_IP>
+   ```
+
+2. Update packages and upgrade system:
+   ```bash
+   sudo apt update && sudo apt upgrade -y
+   sudo apt install -y curl wget git unzip ufw
+   ```
+
+3. (Optional but recommended) Add a 2GB swap file to prevent out-of-memory errors during `npm run build`:
+   ```bash
+   sudo fallocate -l 2G /swapfile
+   sudo chmod 600 /swapfile
+   sudo mkswap /swapfile
+   sudo swapon /swapfile
+   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+   ```
+
+4. Configure the UFW firewall:
+   ```bash
+   sudo ufw default deny incoming
+   sudo ufw default allow outgoing
+   sudo ufw allow OpenSSH
+   sudo ufw allow 80/tcp
+   sudo ufw allow 443/tcp
+   sudo ufw --force enable
    ```
 
 ---
 
-## 4. How n8n Generates Customer Booking Links
+### 3.3 Step 2: Install Node.js 20 LTS & PM2
 
-When a customer initiates an interaction on WhatsApp, n8n connects to Supabase using the **Service Role Key** (never exposed to the browser) and inserts a record into `booking_links`:
+1. Install Node.js 20.x from NodeSource:
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   sudo apt install -y nodejs
+   ```
 
-```sql
-insert into booking_links (mobile, purpose, expires_at)
-values ('919876543210', 'book', now() + interval '30 minutes')
-returning id;
-```
-For a management link (viewing existing reservations):
-```sql
-insert into booking_links (mobile, purpose, expires_at)
-values ('919876543210', 'manage', now() + interval '24 hours')
-returning id;
-```
+2. Verify installation:
+   ```bash
+   node -v   # Should show v20.x.x
+   npm -v    # Should show v10.x.x
+   ```
 
-n8n formats the link and sends it via WhatsApp:
-```
-https://<APP_DOMAIN>/b/<id>
-```
-*(Example: `https://book.tdpcs.coop/b/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11`)*
+3. Install PM2 globally:
+   ```bash
+   sudo npm install -g pm2
+   ```
 
 ---
 
-## 5. Notification Contract (Webhook to n8n)
+### 3.4 Step 3: Clone Repository
 
-Whenever a booking is created, modified, or updated, the `notify_n8n()` trigger posts an HTTP JSON payload to `settings.n8n_webhook_url`:
+1. Create application directory:
+   ```bash
+   sudo mkdir -p /var/www/tdpcs-apt
+   sudo chown -R $USER:$USER /var/www/tdpcs-apt
+   cd /var/www/tdpcs-apt
+   ```
 
-```json
-{
-  "event": "booked",
-  "booking": {
-    "id": 12,
-    "token_no": "T-004",
-    "customer_name": "Rahul K",
-    "mobile": "919876543210",
-    "day": "2026-10-10",
-    "counter": 2,
-    "slot_start": "2026-10-10T10:20:00",
-    "slot_end": "2026-10-10T11:00:00",
-    "report_time": "2026-10-10T10:10:00",
-    "product_ids": [1, 5],
-    "status": "booked",
-    "cancel_reason": null
-  },
-  "previous": null,
-  "client_number": "914712345678"
-}
-```
-
-### Event Types
-| Event | Trigger Condition | `previous` Field Content |
-|---|---|---|
-| `booked` | Initial token reservation created | `null` |
-| `rescheduled` | Customer changed slot date/time | Complete record of the previous booking |
-| `cancelled` | Customer or staff cancelled booking | `null` |
-| `no_show` | Customer did not report before slot start | `null` |
-| `time_changed` | Staff extended slot duration, shifting times | `{ "slot_start": "...", "slot_end": "...", "counter": 1 }` |
-
-*Note: For rescheduled bookings, only a single `rescheduled` event is dispatched. A redundant `cancelled` event is suppressed by the database trigger.*
+2. Clone the GitHub repository:
+   ```bash
+   git clone https://github.com/Intellijohn-Labs/TDPCS-Booking-Systems-.git .
+   ```
 
 ---
 
-## 6. Deployment on Vercel
+### 3.5 Step 4: Configure Production Environment Variables
 
-1. Push this repository to GitHub or GitLab.
-2. In the Vercel Dashboard, import the repository as a Next.js project.
-3. Configure the following Environment Variables:
-   - `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase Project URL (`https://<project-ref>.supabase.co`)
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase public `anon` key
-   - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase `service_role` secret (used exclusively in server-side API routes and Edge Functions; never bundled to the client)
-   - `NEXT_PUBLIC_APP_URL`: Your production domain (e.g. `https://book.tdpcs.coop`)
-4. Deploy the project.
-
----
-
-## 7. Edge Functions Deployment
-
-Deploy the provided Edge Functions to your Supabase project:
+Create the production environment file:
 ```bash
-supabase functions deploy admin-users
-supabase functions deploy test-webhook
+nano .env.local
 ```
 
-Ensure the Edge Functions have access to `SUPABASE_SERVICE_ROLE_KEY` in the Supabase Dashboard under **Project Settings > Edge Functions**.
+Paste your production keys into `.env.local`:
+```env
+# Application Production URL (Your new VPS domain)
+NEXT_PUBLIC_APP_URL=https://your-domain.com
+
+# Supabase API Connection
+NEXT_PUBLIC_SUPABASE_URL=https://jktoipmsdvcnljogitos.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_7PCJ9vSzaa8ZvH9hSYCkEg_ZH2PAi51
+
+# Supabase Service Role Secret (Required for server routes / admin user creation)
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+
+# PostgreSQL Direct Connection String (Optional, for migration scripts)
+PGPASSWORD=your_postgres_password_here
+
+# Operational flags
+NEXT_PUBLIC_USE_SQLITE=false
+NODE_ENV=production
+PORT=3000
+```
+> Press `Ctrl + O` to save, then `Ctrl + X` to exit `nano`.
 
 ---
 
-## 8. Rate Limiting Guidance
+### 3.6 Step 5: Install Dependencies & Build Application
 
-To protect public `customer_*` endpoints from brute-force attempts:
-1. **Supabase Built-in Rate Limits**: Supabase API Gateway automatically enforces rate limits on standard anon requests (typically 100 requests per 10-second window per IP).
-2. **Vercel WAF / Firewall**: On Vercel, enable Firewall rules to limit burst traffic to `/b/*` routes to 30 requests/minute per IP address.
-3. **Database-level UUID Validation**: Link tokens are standard 128-bit UUIDv4 identifiers. Guessing valid unexpired tokens is cryptographically infeasible.
+1. Install dependencies:
+   ```bash
+   npm install --production=false
+   ```
 
----
-
-## 9. Verification & Acceptance Tests
-
-A complete automated acceptance test suite covering all 12 business rules is provided:
-
-### Running SQL Acceptance Tests:
-Open `tests/acceptance.sql` in the Supabase SQL editor and execute it. It will verify:
-1. Two bookings for the same time land on Counter 1 and Counter 2; a 3rd request is rejected as `slot_taken`.
-2. Multi-service durations (Simple Loan 20m + Vehicle Loan 20m = 40m) are respected and never offered past session end.
-3. Slot release immediately on cancellation.
-4. Reschedule creates a new token and rolls back cleanly if the requested slot is taken.
-5. Limit of one active booking per mobile number per day (`already_booked`).
-6. Rejection of expired links across all RPCs.
-7. Postgres RLS restriction preventing `anon` from accessing tables.
-8. Automated time shifting upon booking extension and enforcement of 30-minute max extension.
-9. Mass cancellation on date blocking with `cancel_reason = 'day_blocked'`.
-10. `no_show_sweep()` selectively marking unarrived bookings.
-11. Suppression of redundant cancellation events on reschedule.
-12. 360px mobile view responsiveness for WhatsApp in-app browser.
+2. Build the Next.js production bundle:
+   ```bash
+   npm run build
+   ```
+   *(Verify that the build outputs `✓ Compiled successfully` and all static routes pass without errors).*
 
 ---
 
-## 10. Architectural Decisions & Assumptions Made
+### 3.7 Step 6: Start Next.js with PM2 Cluster
 
-1. **Exclusion Constraint for Concurrency Safety**: The Postgres exclusion constraint `tsrange(slot_start, slot_end) with &&` guarantees mathematical impossibility of overlapping slots on the same counter, even under hundreds of parallel concurrent requests.
-2. **IST Wall-Clock Timestamps**: Times are stored as wall-clock timestamps in India Standard Time without timezone offsets. This eliminates daylight saving bugs and time zone drift when parsing times in the browser.
-3. **Product Deletion Protection**: Deleting a loan scheme that already has booking history automatically deactivates it instead, preserving historical booking and audit data integrity.
-4. **Token Resets**: Token numbers (`T-001`, `T-002`, ...) restart from 1 each day using the `token_counters` table with atomic upserts.
+The repository includes a ready-to-use [`ecosystem.config.js`](file:///c:/Users/shaha/OneDrive/Documents/TDPCS%20Web%20app%20%28Slot%20Booking%29/ecosystem.config.js):
+
+1. Start the application using PM2:
+   ```bash
+   pm2 start ecosystem.config.js
+   ```
+
+2. Verify that `tdpcs-apt` status is **online**:
+   ```bash
+   pm2 status
+   ```
+
+3. Configure PM2 to restart automatically upon system reboot:
+   ```bash
+   pm2 startup
+   ```
+   *(Copy and run the command printed in the terminal by PM2, then run)*:
+   ```bash
+   pm2 save
+   ```
+
+4. Test that the local server responds:
+   ```bash
+   curl -I http://127.0.0.1:3000
+   # Should return HTTP/1.1 200 OK
+   ```
+
+---
+
+### 3.8 Step 7: Configure Nginx Reverse Proxy
+
+1. Install Nginx:
+   ```bash
+   sudo apt install -y nginx
+   ```
+
+2. Create the site configuration file:
+   ```bash
+   sudo nano /etc/nginx/sites-available/tdpcs-apt
+   ```
+
+3. Paste the following configuration (replace `your-domain.com` with your actual domain):
+   ```nginx
+   upstream nextjs_upstream {
+       server 127.0.0.1:3000;
+       keepalive 64;
+   }
+
+   server {
+       listen 80;
+       listen [::]:80;
+       server_name your-domain.com www.your-domain.com;
+
+       client_max_body_size 16M;
+
+       # Security headers
+       add_header X-Frame-Options "SAMEORIGIN" always;
+       add_header X-XSS-Protection "1; mode=block" always;
+       add_header X-Content-Type-Options "nosniff" always;
+       add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+       # Gzip compression
+       gzip on;
+       gzip_proxied any;
+       gzip_comp_level 4;
+       gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+
+       # Cache Next.js static chunks
+       location /_next/static {
+           proxy_pass http://nextjs_upstream;
+           proxy_http_version 1.1;
+           proxy_set_header Connection "";
+           proxy_cache_valid 200 365d;
+           add_header Cache-Control "public, max-age=31536000, immutable";
+       }
+
+       # Cache static images and assets
+       location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
+           proxy_pass http://nextjs_upstream;
+           proxy_http_version 1.1;
+           proxy_set_header Connection "";
+           expires 7d;
+           add_header Cache-Control "public, max-age=604800";
+       }
+
+       # Proxy all requests to Next.js
+       location / {
+           proxy_pass http://nextjs_upstream;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_cache_bypass $http_upgrade;
+
+           proxy_read_timeout 60s;
+           proxy_connect_timeout 60s;
+       }
+   }
+   ```
+
+4. Enable site and test Nginx configuration:
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/tdpcs-apt /etc/nginx/sites-enabled/
+   sudo rm -f /etc/nginx/sites-enabled/default
+   sudo nginx -t
+   sudo systemctl restart nginx
+   ```
+
+---
+
+### 3.9 Step 8: Secure with Free Let's Encrypt SSL (HTTPS)
+
+1. Install Certbot and its Nginx plugin:
+   ```bash
+   sudo apt install -y certbot python3-certbot-nginx
+   ```
+
+2. Generate SSL certificate and automatically configure Nginx:
+   ```bash
+   sudo certbot --nginx -d your-domain.com -d www.your-domain.com
+   ```
+   *(Enter your email address and agree to the Terms of Service. Certbot will configure automatic HTTP-to-HTTPS redirect).*
+
+3. Test certificate auto-renewal:
+   ```bash
+   sudo certbot renew --dry-run
+   ```
+
+---
+
+### 3.10 Step 9: Post-Migration Integration Checklist
+
+Once your domain is live with HTTPS on your VPS:
+
+1. **Update n8n WhatsApp Link Generator**:
+   - In your n8n workflow (`86QmzTAMJ83IQznP`), find the **Build Link Message** node.
+   - Change the booking link domain from the old Vercel URL to your new VPS domain:
+     ```javascript
+     // Replace:
+     // https://tdpcs-booking-systems.vercel.app/b/{{ $json.id }}
+     // With:
+     https://your-domain.com/b/{{ $json.id }}
+     ```
+2. **Update Supabase Site URL & Redirect URLs**:
+   - In the [Supabase Dashboard](https://supabase.com/dashboard) → **Authentication** → **URL Configuration**:
+     - **Site URL**: `https://your-domain.com`
+     - **Redirect URLs**: Add `https://your-domain.com/**`
+3. **Verify Settings in Admin Panel**:
+   - Login to `https://your-domain.com/login`.
+   - Navigate to **Admin → Settings** to confirm notification contact numbers and webhook settings.
+
+---
+
+## 4. Zero-Downtime Updates & Maintenance
+
+Whenever you make changes or push updates to your repository, you can update your VPS with zero downtime using the provided [`deploy.sh`](file:///c:/Users/shaha/OneDrive/Documents/TDPCS%20Web%20app%20%28Slot%20Booking%29/deploy.sh) script.
+
+### 4.1 Running the Deploy Script
+```bash
+cd /var/www/tdpcs-apt
+chmod +x deploy.sh
+./deploy.sh
+```
+
+What `deploy.sh` does:
+1. Pulls the latest commits from `main`.
+2. Installs any new packages.
+3. Compiles the Next.js production build.
+4. Performs a graceful reload in PM2 (`pm2 reload tdpcs-apt`) with zero downtime.
+
+### 4.2 Useful PM2 Commands
+- **Check live status**: `pm2 status`
+- **View realtime logs**: `pm2 logs tdpcs-apt`
+- **View last 100 log lines**: `pm2 logs tdpcs-apt --lines 100`
+- **Interactive resource monitor**: `pm2 monit`
+- **Restart application**: `pm2 restart tdpcs-apt`
+- **Stop application**: `pm2 stop tdpcs-apt`
+
+### 4.3 Nginx Log Inspection
+- **Access Log**: `sudo tail -f /var/log/nginx/access.log`
+- **Error Log**: `sudo tail -f /var/log/nginx/error.log`
+
+---
+
+## 5. Database Architecture & Retention Policy
+
+### 5.1 Automatic 4-Month Data Retention
+To maintain system performance and observe cooperative privacy practices:
+- **Bookings Retention**: All bookings older than 4 months (`day < (now() - interval '4 months')::date`) are deleted automatically.
+- **Audit Log Retention**: All audit log entries older than 4 months (`at < now() - interval '4 months'`) are deleted automatically.
+- **Expired Tokens Cleanup**: Expired `booking_links` records are pruned automatically.
+- **Foreign Key Integrity**: The `audit_log.booking_id` foreign key is configured with `ON DELETE SET NULL`, ensuring the audit trail stays intact even after historical booking rows are deleted.
+
+#### Execution Methods:
+1. **Automated Nightly Sweep (n8n)**: Node `Purge 4-Month Old Records (Daily)` triggers nightly at 02:00 AM IST.
+2. **Manual Admin Execution**: Administrators can execute an immediate purge anytime from **Admin → Audit Log → "Run 4M Purge Now"**.
+3. **Direct SQL / RPC Call**:
+   ```sql
+   SELECT purge_old_records_4months();
+   ```
+
+### 5.2 Auto-Generation of Working Days
+- **Standard Operating Hours**:
+  - **Session 1 (Morning)**: `10:10 AM – 12:30 PM`
+  - **Session 2 (Afternoon)**: `02:00 PM – 05:00 PM`
+- **Operating Days**: Monday through Saturday (`[1, 2, 3, 4, 5, 6]`). Sundays are excluded.
+- **Advance Booking Horizon**: Members can view and reserve dates up to **30 days** in advance (configurable under Admin Settings).
+- **Daily Calendar Maintenance**: n8n triggers `auto_generate_open_days(60)` daily at 02:00 AM IST to keep a rolling 60-day calendar populated.
+
+---
+
+## 6. n8n WhatsApp Workflow Integration
+
+All WhatsApp messaging is driven by n8n workflow `86QmzTAMJ83IQznP`:
+
+1. **Member Initiates Chat**:
+   - Member sends their Member Number or PEN number to the society's official WhatsApp number.
+   - n8n matches the PEN against the member roster and generates a unique single-use booking link:
+     `https://your-domain.com/b/<UUID>` (valid for 2 hours).
+2. **Member Completes Booking**:
+   - Postgres fires trigger `trg_notify_n8n` calling `net.http_post` to `settings.n8n_webhook_url`.
+   - n8n parses the event and delivers an immediate WhatsApp confirmation with token, counter, reporting time, and the surety signature notice.
+3. **Reschedules & Cancellations**:
+   - Dispatches instant WhatsApp updates when a slot is rescheduled, cancelled, or shifted.
+
+---
+
+## 7. Troubleshooting & Common Questions
+
+### 1. 502 Bad Gateway Error
+- **Cause**: Next.js is not running or crashed.
+- **Fix**: Check PM2:
+  ```bash
+  pm2 status
+  pm2 logs tdpcs-apt --lines 50
+  ```
+  If stopped, run `pm2 start ecosystem.config.js`.
+
+### 2. Out of Memory (OOM) during `npm run build`
+- **Cause**: Compiling Next.js pages exceeds VPS physical RAM.
+- **Fix**: Ensure the 2GB swap file was created (see [Step 1](#32-step-1-server-setup--firewall-configuration)).
+
+### 3. Port 3000 Already in Use
+- **Cause**: Another process or zombie instance is listening on port 3000.
+- **Fix**:
+  ```bash
+  sudo lsof -i :3000
+  sudo kill -9 <PID>
+  pm2 restart tdpcs-apt
+  ```
+
+### 4. Links Showing "Link Expired"
+- **Cause**: Token has passed its `expires_at` timestamp (default 2 hours), or database function overload occurred.
+- **Fix**: Ensure PostgreSQL has only a single canonical function `customer_init(p_token text)` (no `uuid` overload). Verify with:
+  ```bash
+  node scripts/inspect-overloaded-funcs.mjs
+  ```
+
+---
+
+## 8. License & Support
+
+Developed for **Thrissur District Police Co-operative Society No. 491** (ESTD. 1945).  
+For technical support or infrastructure queries, contact the system administrator.
