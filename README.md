@@ -12,7 +12,7 @@ The platform allows cooperative society members to reserve counter visit slots v
 3. [VPS Production Migration & Deployment Guide](#3-vps-production-migration--deployment-guide)
    - [3.1 Prerequisites & Server Requirements](#31-prerequisites--server-requirements)
    - [3.2 Step 1: Server Setup & Firewall Configuration](#32-step-1-server-setup--firewall-configuration)
-   - [3.3 Step 2: Install Node.js 20 LTS & PM2](#33-step-2-install-nodejs-20-lts--pm2)
+   - [3.3 Step 2: Install Node.js 22 LTS & PM2](#33-step-2-install-nodejs-22-lts--pm2)
    - [3.4 Step 3: Clone Repository](#34-step-3-clone-repository)
    - [3.5 Step 4: Configure Production Environment Variables](#35-step-4-configure-production-environment-variables)
    - [3.6 Step 5: Install Dependencies & Build Application](#36-step-5-install-dependencies--build-application)
@@ -126,17 +126,17 @@ This guide walks through migrating TDPCS-Apt from Vercel to an **Ubuntu 22.04 LT
 
 ---
 
-### 3.3 Step 2: Install Node.js 20 LTS & PM2
+### 3.3 Step 2: Install Node.js 22 LTS & PM2
 
-1. Install Node.js 20.x from NodeSource:
+1. Install Node.js 22.x from NodeSource:
    ```bash
-   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
    sudo apt install -y nodejs
    ```
 
 2. Verify installation:
    ```bash
-   node -v   # Should show v20.x.x
+   node -v   # Should show v22.x.x (Node 22 LTS is required for built-in SQLite & Supabase compatibility)
    npm -v    # Should show v10.x.x
    ```
 

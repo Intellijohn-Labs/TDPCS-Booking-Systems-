@@ -1,8 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { isSqliteMode, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '@/lib/db/config';
-import { executeQuery, executeRpc } from '@/lib/db/operations';
-import { verifySessionToken } from '@/lib/db/auth';
 
 class ServerLocalQueryBuilder {
   private table: string;
@@ -92,6 +90,8 @@ class ServerLocalQueryBuilder {
 
   async execute() {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { executeQuery } = require('@/lib/db/operations');
       const data = executeQuery({
         table: this.table,
         action: this.action,
@@ -116,6 +116,8 @@ export function createClient(): any {
   if (isSqliteMode()) {
     const cookieStore = cookies();
     const sessionToken = cookieStore.get('tdpcs_session')?.value;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { verifySessionToken } = require('@/lib/db/auth');
     const authUser = sessionToken ? verifySessionToken(sessionToken) : null;
 
     return {
@@ -138,6 +140,8 @@ export function createClient(): any {
       from: (table: string) => new ServerLocalQueryBuilder(table),
       rpc: async (func: string, args: any) => {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { executeRpc } = require('@/lib/db/operations');
           const res = executeRpc(func, args);
           return { data: res, error: null };
         } catch (err: any) {

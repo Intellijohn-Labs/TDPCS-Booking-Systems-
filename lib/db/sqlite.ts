@@ -1,14 +1,31 @@
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 
 const DB_PATH = path.join(process.cwd(), 'tdpcs.sqlite');
 
-let dbInstance: DatabaseSync | null = null;
+let dbInstance: any = null;
+
+function loadDatabaseSyncClass(): any {
+  try {
+    // Dynamically require node:sqlite to ensure Node 18/20 environments do not crash at build time
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sqliteModule = require('node:sqlite');
+    return sqliteModule.DatabaseSync;
+  } catch {
+    return null;
+  }
+}
 
 export function getDb(): DatabaseSync {
   if (!dbInstance) {
-    dbInstance = new DatabaseSync(DB_PATH);
+    const DatabaseSyncClass = loadDatabaseSyncClass();
+    if (!DatabaseSyncClass) {
+      throw new Error(
+        `Built-in 'node:sqlite' is not available in Node.js ${process.version}. SQLite mode requires Node.js 22.5.0+. For production hosting, please use Supabase PostgreSQL or upgrade to Node.js 22 LTS.`
+      );
+    }
+    dbInstance = new DatabaseSyncClass(DB_PATH);
     initSchemaAndSeed(dbInstance);
   }
   return dbInstance;

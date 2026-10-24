@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { createClient as createServerSupabase } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
 import { isSqliteMode, DEFAULT_SUPABASE_URL } from '@/lib/db/config';
-import { authCreateUser, authResetPassword, authToggleActive, authDeleteUser } from '@/lib/db/auth';
 import {
   createUserPg,
   resetUserPasswordPg,
@@ -41,6 +40,8 @@ export async function POST(request: Request) {
 
     // Handle SQLite Mode
     if (isSqliteMode()) {
+      const { authCreateUser, authResetPassword, authToggleActive, authDeleteUser } = await import('@/lib/db/auth');
+
       if (action === 'create-user') {
         const { email, password, fullName, role } = body;
         if (!email || !password || !fullName || !role) {
