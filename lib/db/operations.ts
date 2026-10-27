@@ -652,7 +652,7 @@ export function executeRpc(functionName: string, args: any = {}): any {
     const maxExt = parseInt(maxExtSetting?.value || '30', 10);
 
     if (b.extended_minutes + p_minutes > maxExt) {
-      return { ok: false, error: 'limit_exceeded' };
+      return { ok: false, error: `Extension limit exceeded (Maximum ${maxExt} minutes allowed)` };
     }
 
     const [endDay, endTime] = b.slot_end.split('T');
@@ -662,54 +662,55 @@ export function executeRpc(functionName: string, args: any = {}): any {
     const newM = (newEndMins % 60).toString().padStart(2, '0');
     const newSlotEnd = `${endDay}T${newH}:${newM}:00`;
 
+    // Check if extending exceeds session closing hours
+    const dayRecord = db.prepare('SELECT * FROM open_days WHERE day = ?').get(b.day) as any;
+    if (dayRecord && dayRecord.status === 'open') {
+      const timePart = `${newH}:${newM}`;
+      if (dayRecord.s1_end && endTime.substring(0, 5) <= dayRecord.s1_end && timePart > dayRecord.s1_end) {
+        return {
+          ok: false,
+          error: `Extension not possible: Cannot extend past Morning Session closing time (${dayRecord.s1_end})`,
+        };
+      }
+      if (dayRecord.s2_end && timePart > dayRecord.s2_end) {
+        return {
+          ok: false,
+          error: `Extension not possible: Cannot extend past closing time (${dayRecord.s2_end})`,
+        };
+      }
+    }
+
+    // Check if there is ANY conflicting booking on the same counter during the extension window
+    const conflictBooking = db.prepare(`
+      SELECT * FROM bookings
+      WHERE counter = ? AND day = ? AND status IN ('booked', 'arrived', 'called') AND id != ?
+        AND slot_start < ? AND slot_end > ?
+      ORDER BY slot_start ASC
+      LIMIT 1
+    `).get(b.counter, b.day, b.id, newSlotEnd, b.slot_end) as any;
+
+    if (conflictBooking) {
+      const conflictTime = conflictBooking.slot_start.includes('T')
+        ? conflictBooking.slot_start.split('T')[1].substring(0, 5)
+        : conflictBooking.slot_start.substring(0, 5);
+      return {
+        ok: false,
+        error: `Extension not possible: Counter ${b.counter} has booking ${conflictBooking.token_no || ''} scheduled at ${conflictTime}`,
+      };
+    }
+
     db.prepare(`
       UPDATE bookings
       SET slot_end = ?, extended_minutes = extended_minutes + ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(newSlotEnd, p_minutes, p_id);
 
-    // Shift any subsequent bookings on the same counter and day
-    const subsequentBookings = db.prepare(`
-      SELECT * FROM bookings
-      WHERE counter = ? AND day = ? AND status = 'booked' AND slot_start >= ? AND id != ?
-      ORDER BY slot_start ASC
-    `).all(b.counter, b.day, b.slot_start, b.id) as any[];
-
-    let cursor = newSlotEnd;
-    for (const sub of subsequentBookings) {
-      if (sub.slot_start >= cursor) break;
-
-      const [sH, sM] = sub.slot_start.split('T')[1].split(':').map(Number);
-      const [eH, eM] = sub.slot_end.split('T')[1].split(':').map(Number);
-      const [rH, rM] = sub.report_time.split('T')[1].split(':').map(Number);
-
-      const shift = p_minutes;
-      const newSH = Math.floor((sH * 60 + sM + shift) / 60).toString().padStart(2, '0');
-      const newSM = ((sH * 60 + sM + shift) % 60).toString().padStart(2, '0');
-      const newEH = Math.floor((eH * 60 + eM + shift) / 60).toString().padStart(2, '0');
-      const newEM = ((eH * 60 + eM + shift) % 60).toString().padStart(2, '0');
-      const newRH = Math.floor((rH * 60 + rM + shift) / 60).toString().padStart(2, '0');
-      const newRM = ((rH * 60 + rM + shift) % 60).toString().padStart(2, '0');
-
-      const shiftedStart = `${sub.day}T${newSH}:${newSM}:00`;
-      const shiftedEnd = `${sub.day}T${newEH}:${newEM}:00`;
-      const shiftedReport = `${sub.day}T${newRH}:${newRM}:00`;
-
-      db.prepare(`
-        UPDATE bookings
-        SET slot_start = ?, slot_end = ?, report_time = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(shiftedStart, shiftedEnd, shiftedReport, sub.id);
-
-      cursor = shiftedEnd;
-    }
-
     db.prepare(`
       INSERT INTO audit_log (actor, action, booking_id, details)
       VALUES ('staff', 'extend', ?, ?)
-    `).run(p_id, JSON.stringify({ minutes: p_minutes }));
+    `).run(p_id, JSON.stringify({ minutes: p_minutes, new_slot_end: newSlotEnd }));
 
-    return { ok: true, counter_free_from: cursor };
+    return { ok: true, counter_free_from: newSlotEnd };
   }
 
   if (functionName === 'block_day') {

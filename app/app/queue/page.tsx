@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Database, BookingStatus } from '@/types/database';
 import {
@@ -46,6 +46,7 @@ export default function QueueDeskPage() {
 
   // Extend Modal State
   const [extendingBooking, setExtendingBooking] = useState<Booking | null>(null);
+  const [extendError, setExtendError] = useState<string | null>(null);
   const [extensionShiftAlert, setExtensionShiftAlert] = useState<string | null>(null);
 
   // Block Day Modal State
@@ -164,37 +165,61 @@ export default function QueueDeskPage() {
     await handleSetStatus(target.id, 'called');
   };
 
+  // Calculate upcoming booking on the same counter during extension
+  const nextBookingOnCounter = useMemo(() => {
+    if (!extendingBooking) return null;
+    return (
+      bookings
+        .filter(
+          (b) =>
+            b.counter === extendingBooking.counter &&
+            b.id !== extendingBooking.id &&
+            ['booked', 'arrived', 'called'].includes(b.status) &&
+            b.slot_start >= extendingBooking.slot_end
+        )
+        .sort((a, b) => a.slot_start.localeCompare(b.slot_start))[0] || null
+    );
+  }, [extendingBooking, bookings]);
+
+  // Available free buffer minutes before next booking or session closing
+  const freeBufferMinutes = useMemo(() => {
+    if (!extendingBooking) return 0;
+    if (nextBookingOnCounter) {
+      const startMs = new Date(extendingBooking.slot_end).getTime();
+      const nextMs = new Date(nextBookingOnCounter.slot_start).getTime();
+      return Math.max(0, Math.floor((nextMs - startMs) / 60000));
+    }
+    if (openDay) {
+      const [endDay, endTime] = extendingBooking.slot_end.split('T');
+      const timePart = endTime.substring(0, 5);
+      const sessionEnd =
+        openDay.s1_end && timePart <= openDay.s1_end ? openDay.s1_end : openDay.s2_end;
+      if (sessionEnd) {
+        const startMs = new Date(extendingBooking.slot_end).getTime();
+        const sessionMs = new Date(`${endDay}T${sessionEnd}:00`).getTime();
+        return Math.max(0, Math.floor((sessionMs - startMs) / 60000));
+      }
+    }
+    return 60;
+  }, [extendingBooking, nextBookingOnCounter, openDay]);
+
   // Extend Action
   const handleApplyExtension = async (minutes: number) => {
     if (!extendingBooking) return;
     setActionLoadingId(extendingBooking.id);
+    setExtendError(null);
     setExtensionShiftAlert(null);
     try {
       const res = await extendBooking(extendingBooking.id, minutes);
       if (res.ok) {
-        // Check if any booking now exceeds session end
         setExtendingBooking(null);
+        setExtendError(null);
         await loadData();
-
-        // Check if latest booking end exceeds session end
-        if (openDay) {
-          const sessionEnd = openDay.s2_end || openDay.s1_end;
-          if (sessionEnd && res.counter_free_from) {
-            const freeFromTime = res.counter_free_from.includes('T')
-              ? res.counter_free_from.split('T')[1]
-              : res.counter_free_from;
-            if (freeFromTime > sessionEnd) {
-              setExtensionShiftAlert(
-                `Warning: Shifted bookings on Counter ${extendingBooking.counter} now extend beyond the session end (${formatSlotTime(sessionEnd)})!`
-              );
-            }
-          }
-        }
       } else {
-        alert(res.error || 'Cannot extend booking');
+        setExtendError(res.error || 'Extension not possible: Conflicting booking on this counter');
       }
     } catch (e: any) {
-      alert(e.message || 'Error extending slot');
+      setExtendError(e.message || 'Error extending slot');
     } finally {
       setActionLoadingId(null);
     }
@@ -361,7 +386,10 @@ export default function QueueDeskPage() {
                   maxExtension={maxExtension}
                   loadingAction={actionLoadingId === b.id}
                   onStatus={handleSetStatus}
-                  onOpenExtend={setExtendingBooking}
+                  onOpenExtend={(b) => {
+                    setExtendError(null);
+                    setExtendingBooking(b);
+                  }}
                   onDelete={handleDeleteToken}
                 />
               ))
@@ -399,7 +427,10 @@ export default function QueueDeskPage() {
                   maxExtension={maxExtension}
                   loadingAction={actionLoadingId === b.id}
                   onStatus={handleSetStatus}
-                  onOpenExtend={setExtendingBooking}
+                  onOpenExtend={(b) => {
+                    setExtendError(null);
+                    setExtendingBooking(b);
+                  }}
                   onDelete={handleDeleteToken}
                 />
               ))
@@ -436,25 +467,77 @@ export default function QueueDeskPage() {
               </div>
             </div>
 
-            <p className="text-xs text-slate-500">
-              Extending will automatically shift all subsequent bookings on this counter forward.
+            {/* Error / Conflict Feedback */}
+            {extendError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-start space-x-2 animate-in fade-in">
+                <AlertOctagon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <span className="font-medium">{extendError}</span>
+              </div>
+            )}
+
+            {/* Next Booking Buffer Info */}
+            {nextBookingOnCounter ? (
+              freeBufferMinutes === 0 ? (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex items-start space-x-2">
+                  <AlertOctagon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Extension Not Possible</span>
+                    <span className="text-[11px]">
+                      Next booking starts at {formatSlotTime(nextBookingOnCounter.slot_start)} (Token #{nextBookingOnCounter.token_no}). No buffer available on Counter {extendingBooking.counter}.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between">
+                  <span className="text-[11px]">
+                    Next booking: <strong>{formatSlotTime(nextBookingOnCounter.slot_start)}</strong> (#{nextBookingOnCounter.token_no})
+                  </span>
+                  <span className="font-bold font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-amber-200 text-[11px]">
+                    {freeBufferMinutes}m buffer free
+                  </span>
+                </div>
+              )
+            ) : (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center justify-between">
+                <span className="text-[11px]">No upcoming bookings on Counter {extendingBooking.counter}</span>
+                <span className="font-bold font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                  {freeBufferMinutes}m available
+                </span>
+              </div>
+            )}
+
+            <p className="text-[11px] text-slate-500">
+              Extension is only allowed when no other booking is scheduled on Counter {extendingBooking.counter} during the extended time.
             </p>
 
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-2 gap-2 pt-1">
               {[5, 10, 15, 30].map((mins) => {
-                const disabled = extendingBooking.extended_minutes + mins > maxExtension;
+                const limitExceeded = extendingBooking.extended_minutes + mins > maxExtension;
+                const bufferConflict = mins > freeBufferMinutes;
+                const disabled = limitExceeded || bufferConflict || actionLoadingId === extendingBooking.id;
+
                 return (
                   <button
                     key={mins}
-                    disabled={disabled || actionLoadingId === extendingBooking.id}
+                    disabled={disabled}
                     onClick={() => handleApplyExtension(mins)}
-                    className={`p-3 rounded-xl border text-center font-bold text-xs transition ${
+                    className={`p-3 rounded-xl border text-center transition flex flex-col items-center justify-center ${
                       disabled
                         ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                        : 'border-emerald-800/40 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 active:scale-95'
+                        : 'border-emerald-800/40 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 active:scale-95 font-bold shadow-xs'
                     }`}
                   >
-                    +{mins} Minutes
+                    <span className="font-bold text-xs">+{mins} Minutes</span>
+                    {bufferConflict && (
+                      <span className="text-[10px] text-red-500 font-semibold mt-0.5">
+                        (Not possible)
+                      </span>
+                    )}
+                    {limitExceeded && !bufferConflict && (
+                      <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                        (Limit reached)
+                      </span>
+                    )}
                   </button>
                 );
               })}
