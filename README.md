@@ -188,7 +188,7 @@ PGPASSWORD=your_postgres_password_here
 # Operational flags
 NEXT_PUBLIC_USE_SQLITE=false
 NODE_ENV=production
-PORT=5000
+PORT=3015
 ```
 > Press `Ctrl + O` to save, then `Ctrl + X` to exit `nano`.
 
@@ -234,7 +234,7 @@ The repository includes a ready-to-use [`ecosystem.config.js`](file:///c:/Users/
 
 4. Test that the local server responds:
    ```bash
-   curl -I http://127.0.0.1:5000
+   curl -I http://127.0.0.1:3015
    # Should return HTTP/1.1 200 OK
    ```
 
@@ -255,7 +255,7 @@ The repository includes a ready-to-use [`ecosystem.config.js`](file:///c:/Users/
 3. Paste the following configuration (replace `your-domain.com` with your actual domain):
    ```nginx
    upstream nextjs_upstream {
-       server 127.0.0.1:5000;
+       server 127.0.0.1:3015;
        keepalive 64;
    }
 
@@ -456,11 +456,11 @@ All WhatsApp messaging is driven by n8n workflow `86QmzTAMJ83IQznP`:
 - **Cause**: Compiling Next.js pages exceeds VPS physical RAM.
 - **Fix**: Ensure the 2GB swap file was created (see [Step 1](#32-step-1-server-setup--firewall-configuration)).
 
-### 3. Port 5000 Already in Use
-- **Cause**: Another process or zombie instance is listening on port 5000.
+### 3. Port 3015 Already in Use
+- **Cause**: Another process or zombie instance is listening on port 3015.
 - **Fix**:
   ```bash
-  sudo lsof -i :5000
+  sudo lsof -i :3015
   sudo kill -9 <PID>
   pm2 restart tdpcs-apt
   ```
