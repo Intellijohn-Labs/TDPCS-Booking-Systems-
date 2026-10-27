@@ -84,6 +84,44 @@ export default function AdminSettingsPage() {
     loadSettings();
   }, [loadSettings]);
 
+  const handleToggleSettingsDow = async (dow: number) => {
+    const next = autoCalendarDows.includes(dow)
+      ? autoCalendarDows.filter((d) => d !== dow)
+      : [...autoCalendarDows, dow].sort();
+    if (next.length === 0) {
+      alert('Please keep at least one day open for booking.');
+      return;
+    }
+    setAutoCalendarDows(next);
+    try {
+      await syncWorkingSchedule(next, saturdayAfternoonSession);
+      setFeedback({ type: 'success', message: 'Weekly schedule updated live!' });
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleSettingsSatAfternoon = async () => {
+    const next = !saturdayAfternoonSession;
+    setSaturdayAfternoonSession(next);
+    try {
+      await syncWorkingSchedule(autoCalendarDows, next);
+      setFeedback({ type: 'success', message: `Saturday afternoon ${next ? 'enabled' : 'disabled'} live!` });
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  const handleResetSettingsDows = async () => {
+    setAutoCalendarDows([2, 4, 6]);
+    try {
+      await syncWorkingSchedule([2, 4, 6], saturdayAfternoonSession);
+      setFeedback({ type: 'success', message: 'Reset to standard 3 days (Tue, Thu, Sat) live!' });
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -293,7 +331,7 @@ export default function AdminSettingsPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setSaturdayAfternoonSession(!saturdayAfternoonSession)}
+                onClick={handleToggleSettingsSatAfternoon}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition border shrink-0 ${
                   saturdayAfternoonSession
                     ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
@@ -312,7 +350,7 @@ export default function AdminSettingsPage() {
                 </label>
                 <button
                   type="button"
-                  onClick={() => setAutoCalendarDows([2, 4, 6])}
+                  onClick={handleResetSettingsDows}
                   className="text-[11px] text-emerald-800 hover:underline font-bold"
                 >
                   Reset to Standard 3 Days (Tue, Thu, Sat)
@@ -325,13 +363,7 @@ export default function AdminSettingsPage() {
                     <button
                       key={dow}
                       type="button"
-                      onClick={() => {
-                        setAutoCalendarDows((prev) =>
-                          prev.includes(dow)
-                            ? prev.filter((d) => d !== dow)
-                            : [...prev, dow].sort()
-                        );
-                      }}
+                      onClick={() => handleToggleSettingsDow(dow)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
                         isActive
                           ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'

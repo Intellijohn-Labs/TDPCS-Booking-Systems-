@@ -118,6 +118,13 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
     }
   }, [token]);
 
+  // Re-fetch latest open dates from database whenever user enters Step 2 (Date selection)
+  useEffect(() => {
+    if (token && step === 2) {
+      loadInitData();
+    }
+  }, [step]);
+
   // Total duration in minutes of selected products
   const totalMinutes = selectedProductIds.reduce((sum, id) => {
     const prod = initData?.products?.find((p) => p.id === id);
@@ -723,6 +730,8 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                 availableDates={initData.dates}
                 selectedDate={selectedDay}
                 onSelectDate={(day) => handleDaySelect(day)}
+                onRefresh={loadInitData}
+                refreshing={loadingInit}
               />
             )}
           </div>
@@ -1309,6 +1318,8 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                 availableDates={initData?.dates || []}
                 selectedDate={rescheduleDay}
                 onSelectDate={(day) => loadRescheduleSlotsForDay(day)}
+                onRefresh={loadInitData}
+                refreshing={loadingInit}
               />
             </div>
 

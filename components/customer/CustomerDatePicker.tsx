@@ -3,12 +3,14 @@
 import React, { useState, useMemo } from 'react';
 import { CustomerOpenDay } from '@/types/database';
 import { formatSlotDate, formatSlotTime } from '@/lib/date-utils';
-import { ChevronLeft, ChevronRight, Calendar, Clock, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Clock, Check, RotateCw } from 'lucide-react';
 
 interface CustomerDatePickerProps {
   availableDates: CustomerOpenDay[];
   selectedDate: string; // YYYY-MM-DD
   onSelectDate: (dayStr: string) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
   title?: string;
   subtitle?: string;
 }
@@ -34,6 +36,8 @@ export default function CustomerDatePicker({
   availableDates = [],
   selectedDate,
   onSelectDate,
+  onRefresh,
+  refreshing = false,
   title,
   subtitle,
 }: CustomerDatePickerProps) {
@@ -152,6 +156,17 @@ export default function CustomerDatePicker({
           </div>
 
           <div className="flex items-center space-x-1">
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={refreshing}
+                title="Refresh calendar dates"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-500 hover:text-emerald-800 hover:bg-emerald-50 active:scale-95 transition"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-emerald-700' : ''}`} />
+              </button>
+            )}
             <button
               type="button"
               onClick={handlePrevMonth}

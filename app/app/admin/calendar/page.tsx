@@ -170,21 +170,6 @@ export default function AdminCalendarPage() {
     }
   };
 
-  // Toggle Weekly Day of Week in Master Schedule Card
-  const handleToggleWeeklyDow = (dow: number) => {
-    setWeeklyDows((prev) => {
-      const next = prev.includes(dow)
-        ? prev.filter((d) => d !== dow)
-        : [...prev, dow].sort();
-      return next;
-    });
-  };
-
-  // Set Preset for Weekly Master Schedule Card
-  const handleSelectWeeklyPreset = (dows: number[]) => {
-    setWeeklyDows(dows);
-  };
-
   // Apply & Synchronize Weekly Master Schedule + Saturday Afternoon Toggle
   const handleApplySchedule = async (customDows?: number[], customSatAfternoon?: boolean) => {
     const targetDows = customDows ?? weeklyDows;
@@ -219,7 +204,7 @@ export default function AdminCalendarPage() {
 
         setScheduleNotice({
           type: 'success',
-          text: `Schedule successfully updated and synchronized! Open days: ${activeDayNames} (${targetDows.length} days/week). Saturday Afternoon: ${
+          text: `Live update applied! Open days: ${activeDayNames} (${targetDows.length} days/week). Saturday Afternoon: ${
             targetSatAfternoon ? 'ENABLED (2:00 PM – 5:00 PM)' : 'DISABLED (Morning 10:10 AM – 12:30 PM only)'
           }.`,
         });
@@ -234,6 +219,34 @@ export default function AdminCalendarPage() {
     } finally {
       setSyncingSchedule(false);
     }
+  };
+
+  // Toggle Weekly Day of Week in Master Schedule Card (Auto-Syncs Live!)
+  const handleToggleWeeklyDow = async (dow: number) => {
+    const next = weeklyDows.includes(dow)
+      ? weeklyDows.filter((d) => d !== dow)
+      : [...weeklyDows, dow].sort();
+
+    if (next.length === 0) {
+      alert('Please keep at least one day open for booking.');
+      return;
+    }
+
+    setWeeklyDows(next);
+    await handleApplySchedule(next, satAfternoon);
+  };
+
+  // Set Preset for Weekly Master Schedule Card (Auto-Syncs Live!)
+  const handleSelectWeeklyPreset = async (dows: number[]) => {
+    setWeeklyDows(dows);
+    await handleApplySchedule(dows, satAfternoon);
+  };
+
+  // Toggle Saturday Afternoon (Auto-Syncs Live!)
+  const handleToggleSaturdayAfternoon = async () => {
+    const next = !satAfternoon;
+    setSatAfternoon(next);
+    await handleApplySchedule(weeklyDows, next);
   };
 
   // Toggle day of week in custom preset
@@ -689,8 +702,9 @@ export default function AdminCalendarPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSatAfternoon(!satAfternoon)}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                  onClick={handleToggleSaturdayAfternoon}
+                  disabled={syncingSchedule}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
                     satAfternoon ? 'bg-emerald-600' : 'bg-slate-300'
                   }`}
                   role="switch"
@@ -739,8 +753,9 @@ export default function AdminCalendarPage() {
               </span>
               <button
                 type="button"
-                onClick={() => setSatAfternoon(!satAfternoon)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition border ${
+                onClick={handleToggleSaturdayAfternoon}
+                disabled={syncingSchedule}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition border disabled:opacity-50 ${
                   satAfternoon
                     ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
                     : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300'
