@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getEffectiveSupabaseUrl } from '@/lib/db/config';
 import { logAuditEvent, syncWorkingSchedule } from '@/lib/staff-api';
 import {
   Sliders,
@@ -174,7 +175,7 @@ export default function AdminSettingsPage() {
     try {
       const session = (await supabase.auth.getSession()).data.session;
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/test-webhook`,
+        `${getEffectiveSupabaseUrl()}/functions/v1/test-webhook`,
         {
           method: 'POST',
           headers: {
