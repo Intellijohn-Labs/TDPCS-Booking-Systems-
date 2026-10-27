@@ -8,10 +8,17 @@ let dbInstance: any = null;
 
 function loadDatabaseSyncClass(): any {
   try {
-    // Dynamically require node:sqlite to ensure Node 18/20 environments do not crash at build time
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const sqliteModule = require('node:sqlite');
-    return sqliteModule.DatabaseSync;
+    // 1. Check process.getBuiltinModule (Node.js 22.3+)
+    if (typeof process !== 'undefined' && typeof (process as any).getBuiltinModule === 'function') {
+      const mod = (process as any).getBuiltinModule('node:sqlite');
+      if (mod && mod.DatabaseSync) return mod.DatabaseSync;
+    }
+
+    // 2. Dynamic require hidden from Webpack's static AST scanner
+    // (This guarantees Webpack never extracts 'node:sqlite' as an external dependency at build time)
+    const dynamicRequire = eval('require');
+    const sqliteModule = dynamicRequire('node:sqlite');
+    return sqliteModule?.DatabaseSync || null;
   } catch {
     return null;
   }

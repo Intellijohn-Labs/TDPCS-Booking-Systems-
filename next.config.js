@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['node:sqlite'],
-  },
   allowedDevOrigins: [
     'chatting-specked-cassette.ngrok-free.dev',
     'localhost:3002',
