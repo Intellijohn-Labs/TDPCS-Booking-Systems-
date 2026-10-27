@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Database } from '@/types/database';
-import { blockDay, autoGenerateOpenDays, logAuditEvent } from '@/lib/staff-api';
+import { blockDay, autoGenerateOpenDays, syncWorkingSchedule, logAuditEvent } from '@/lib/staff-api';
 import {
   formatSlotDate,
   formatSlotTime,
@@ -26,6 +26,11 @@ import {
   SlidersHorizontal,
   ChevronRight,
   Info,
+  Check,
+  ToggleLeft,
+  ToggleRight,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 type OpenDay = Database['public']['Tables']['open_days']['Row'];
@@ -46,6 +51,12 @@ export default function AdminCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [autoNotice, setAutoNotice] = useState<string | null>(null);
 
+  // Weekly Schedule & Saturday Afternoon Management
+  const [weeklyDows, setWeeklyDows] = useState<number[]>([2, 4, 6]); // Default Tue, Thu, Sat
+  const [satAfternoon, setSatAfternoon] = useState<boolean>(false);
+  const [syncingSchedule, setSyncingSchedule] = useState<boolean>(false);
+  const [scheduleNotice, setScheduleNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Manual Add/Edit Form modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDay, setEditingDay] = useState<string | null>(null);
@@ -63,7 +74,7 @@ export default function AdminCalendarPage() {
   // Auto-Generate Modal state
   const [autoModalOpen, setAutoModalOpen] = useState(false);
   const [autoPreset, setAutoPreset] = useState<'standard' | 'weekdays' | 'full_week' | 'custom'>('standard');
-  const [selectedDows, setSelectedDows] = useState<number[]>([1, 2, 3, 4, 5, 6]); // default Mon - Sat
+  const [selectedDows, setSelectedDows] = useState<number[]>([2, 4, 6]); // default Tue, Thu, Sat
   const [autoHorizon, setAutoHorizon] = useState<number>(60);
   const [autoGenerating, setAutoGenerating] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
@@ -75,20 +86,41 @@ export default function AdminCalendarPage() {
     setLoading(true);
     try {
       const today = getTodayIST();
-      const [{ data: days }, { data: advSetting }] = await Promise.all([
+      const [{ data: days }, { data: settingsRows }] = await Promise.all([
         supabase.from('open_days').select('*').gte('day', today).order('day', { ascending: true }),
-        supabase.from('settings').select('value').eq('key', 'advance_days').single(),
+        supabase.from('settings').select('*'),
       ]);
 
       const loadedDays = (days as OpenDay[]) || [];
-      const currentAdv = advSetting ? parseInt((advSetting as any).value, 10) || 15 : 15;
-      setAdvanceDays(currentAdv);
+      let curAdv = 15;
+      let curDows = [2, 4, 6];
+      let curSatAfternoon = false;
+
+      if (settingsRows) {
+        for (const s of settingsRows as any[]) {
+          if (s.key === 'advance_days') curAdv = parseInt(s.value, 10) || 15;
+          if (s.key === 'auto_calendar_dows') {
+            try {
+              const parsed = JSON.parse(s.value);
+              if (Array.isArray(parsed) && parsed.length > 0) curDows = parsed;
+            } catch {}
+          }
+          if (s.key === 'saturday_afternoon_session') {
+            curSatAfternoon = s.value === 'true';
+          }
+        }
+      }
+
+      setAdvanceDays(curAdv);
+      setWeeklyDows(curDows);
+      setSatAfternoon(curSatAfternoon);
+      setSelectedDows(curDows);
 
       // Automatic rolling generation check:
       // If there are fewer than 5 future open days on initial load, auto-generate the next 60 days!
       const openCount = loadedDays.filter((d) => d.status === 'open').length;
       if (isInitial && openCount < 5) {
-        const res = await autoGenerateOpenDays(60, [1, 2, 3, 4, 5, 6]);
+        const res = await autoGenerateOpenDays(60, curDows);
         if (res.ok && (res.days_inserted || 0) > 0) {
           setAutoNotice(`Auto-generated ${res.days_inserted} dates for upcoming weeks.`);
           // Reload refreshed days
@@ -129,10 +161,78 @@ export default function AdminCalendarPage() {
   // Preset changer for Auto-Generate
   const handlePresetChange = (preset: 'standard' | 'weekdays' | 'full_week' | 'custom') => {
     setAutoPreset(preset);
-    if (preset === 'standard' || preset === 'full_week') {
-      setSelectedDows([1, 2, 3, 4, 5, 6]); // Mon - Sat (TDPCS standard)
+    if (preset === 'standard') {
+      setSelectedDows([2, 4, 6]); // Tue, Thu, Sat (3 days standard)
     } else if (preset === 'weekdays') {
       setSelectedDows([1, 2, 3, 4, 5]); // Mon - Fri
+    } else if (preset === 'full_week') {
+      setSelectedDows([1, 2, 3, 4, 5, 6]); // Mon - Sat
+    }
+  };
+
+  // Toggle Weekly Day of Week in Master Schedule Card
+  const handleToggleWeeklyDow = (dow: number) => {
+    setWeeklyDows((prev) => {
+      const next = prev.includes(dow)
+        ? prev.filter((d) => d !== dow)
+        : [...prev, dow].sort();
+      return next;
+    });
+  };
+
+  // Set Preset for Weekly Master Schedule Card
+  const handleSelectWeeklyPreset = (dows: number[]) => {
+    setWeeklyDows(dows);
+  };
+
+  // Apply & Synchronize Weekly Master Schedule + Saturday Afternoon Toggle
+  const handleApplySchedule = async (customDows?: number[], customSatAfternoon?: boolean) => {
+    const targetDows = customDows ?? weeklyDows;
+    const targetSatAfternoon = customSatAfternoon ?? satAfternoon;
+
+    if (targetDows.length === 0) {
+      alert('Please select at least one day open for booking.');
+      return;
+    }
+
+    setSyncingSchedule(true);
+    setScheduleNotice(null);
+
+    try {
+      const res = await syncWorkingSchedule(targetDows, targetSatAfternoon);
+      if (!res.ok) {
+        setScheduleNotice({
+          type: 'error',
+          text: res.error || 'Failed to update working schedule',
+        });
+      } else {
+        await logAuditEvent('admin:sync_working_schedule', {
+          working_dows: targetDows,
+          saturday_afternoon: targetSatAfternoon,
+          updated_open_days: res.updated_open_days,
+          blocked_closed_days: res.blocked_closed_days,
+        });
+
+        const activeDayNames = targetDows
+          .map((d) => DAY_LABELS.find((l) => l.dow === d)?.short)
+          .join(', ');
+
+        setScheduleNotice({
+          type: 'success',
+          text: `Schedule successfully updated and synchronized! Open days: ${activeDayNames} (${targetDows.length} days/week). Saturday Afternoon: ${
+            targetSatAfternoon ? 'ENABLED (2:00 PM – 5:00 PM)' : 'DISABLED (Morning 10:10 AM – 12:30 PM only)'
+          }.`,
+        });
+
+        await loadData(false);
+      }
+    } catch (err: any) {
+      setScheduleNotice({
+        type: 'error',
+        text: err.message || 'Failed to synchronize schedule',
+      });
+    } finally {
+      setSyncingSchedule(false);
     }
   };
 
@@ -404,9 +504,15 @@ export default function AdminCalendarPage() {
             </div>
             <p className="text-xs text-emerald-100/90 max-w-2xl leading-relaxed">
               Open dates are automatically maintained ahead every night. Members can book slots up to{' '}
-              <strong className="text-white underline">{advanceDays} days advance</strong>. All open days are
-              scheduled for <strong className="text-white">Session 1 (10:10 AM – 12:30 PM)</strong> and{' '}
-              <strong className="text-white">Session 2 (2:00 PM – 5:00 PM)</strong>.
+              <strong className="text-white underline">{advanceDays} days advance</strong>. Active booking days:{' '}
+              <strong className="text-white">
+                {weeklyDows.map((d) => DAY_LABELS.find((l) => l.dow === d)?.short).join(', ')} ({weeklyDows.length} days/week)
+              </strong>
+              . Saturday afternoon is{' '}
+              <strong className="text-white underline">
+                {satAfternoon ? 'OPEN (2 PM – 5 PM)' : 'CLOSED (Morning only)'}
+              </strong>
+              .
             </p>
           </div>
 
@@ -426,6 +532,223 @@ export default function AdminCalendarPage() {
               <Zap className="w-3.5 h-3.5 text-slate-950 fill-current" />
               <span>{autoGenerating ? 'Generating...' : '+30 Days Quick Extend'}</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Weekly Schedule & Saturday Afternoon Control Card */}
+      <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+              <SlidersHorizontal className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+                Weekly Booking Schedule & Saturday Afternoon Control
+              </h2>
+              <p className="text-xs text-slate-500">
+                Choose which days are open for member booking each week, and turn Saturday afternoon sessions ON or OFF.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => handleApplySchedule()}
+              disabled={syncingSchedule}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold rounded-xl shadow-xs transition disabled:opacity-50"
+            >
+              {syncingSchedule ? (
+                <>
+                  <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Synchronizing...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Apply & Sync Schedule</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Schedule Notice */}
+        {scheduleNotice && (
+          <div
+            className={`p-3.5 rounded-2xl text-xs font-medium flex items-center space-x-2 ${
+              scheduleNotice.type === 'success'
+                ? 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                : 'bg-red-50 text-red-900 border border-red-200'
+            }`}
+          >
+            {scheduleNotice.type === 'success' ? (
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertOctagon className="w-4 h-4 text-red-600 shrink-0" />
+            )}
+            <span>{scheduleNotice.text}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Column 1: Weekly Open Days */}
+          <div className="space-y-3.5 p-4 bg-slate-50/70 rounded-2xl border border-slate-200/70">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-900 block">Weekly Open Days for Booking</span>
+                <span className="text-[11px] text-slate-500">
+                  Select which days members can book slots each week.
+                </span>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800">
+                {weeklyDows.length} Days Active
+              </span>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Presets:</span>
+              <button
+                type="button"
+                onClick={() => handleSelectWeeklyPreset([2, 4, 6])}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                  weeklyDows.length === 3 && [2, 4, 6].every((d) => weeklyDows.includes(d))
+                    ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                ★ Standard 3 Days (Tue, Thu, Sat)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectWeeklyPreset([1, 2, 3, 4, 5])}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                  weeklyDows.length === 5 && [1, 2, 3, 4, 5].every((d) => weeklyDows.includes(d))
+                    ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                5 Days (Mon–Fri)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectWeeklyPreset([1, 2, 3, 4, 5, 6])}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                  weeklyDows.length === 6 && [1, 2, 3, 4, 5, 6].every((d) => weeklyDows.includes(d))
+                    ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                6 Days (Mon–Sat)
+              </button>
+            </div>
+
+            {/* Individual Day Buttons */}
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 pt-1">
+              {DAY_LABELS.map(({ dow, name, short }) => {
+                const isActive = weeklyDows.includes(dow);
+                return (
+                  <button
+                    key={dow}
+                    type="button"
+                    onClick={() => handleToggleWeeklyDow(dow)}
+                    className={`py-2 px-1 rounded-xl text-center text-xs font-bold transition border flex flex-col items-center justify-center ${
+                      isActive
+                        ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'
+                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-700'
+                    }`}
+                  >
+                    <span className="text-[11px] font-extrabold">{short}</span>
+                    <span className="text-[9px] font-normal mt-0.5 opacity-80">
+                      {isActive ? '✓ Open' : 'Off'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-tight">
+              <strong>Tip:</strong> Changing this list and clicking &ldquo;Apply &amp; Sync Schedule&rdquo; will automatically open matching upcoming days and close unselected days that do not have active member bookings.
+            </p>
+          </div>
+
+          {/* Column 2: Saturday Afternoon Session Toggle */}
+          <div className="space-y-3.5 p-4 bg-slate-50/70 rounded-2xl border border-slate-200/70 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-slate-900 block">
+                    Saturday Afternoon Session (2:00 PM – 5:00 PM)
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Switch Saturday afternoons ON or OFF for member slot booking.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSatAfternoon(!satAfternoon)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    satAfternoon ? 'bg-emerald-600' : 'bg-slate-300'
+                  }`}
+                  role="switch"
+                  aria-checked={satAfternoon}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      satAfternoon ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Status Banner */}
+              <div
+                className={`mt-3 p-3 rounded-xl border text-xs leading-relaxed space-y-1 ${
+                  satAfternoon
+                    ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50/90 border-amber-200 text-amber-900'
+                }`}
+              >
+                <div className="flex items-center space-x-1.5 font-bold">
+                  {satAfternoon ? (
+                    <>
+                      <Sun className="w-4 h-4 text-emerald-600" />
+                      <span>Saturday Afternoon is ON (Full Day Booking)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="w-4 h-4 text-amber-600" />
+                      <span>Saturday Afternoon is OFF (Morning Only)</span>
+                    </>
+                  )}
+                </div>
+                <p className="text-[11px] opacity-90">
+                  {satAfternoon
+                    ? 'Members can book both Morning (10:10 AM – 12:30 PM) and Afternoon (2:00 PM – 5:00 PM) slots on Saturdays.'
+                    : 'Members can ONLY book Morning (10:10 AM – 12:30 PM) slots on Saturdays. Afternoon session (2:00 PM – 5:00 PM) is disabled and closed.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                Current Setting: <strong className="text-slate-800">{satAfternoon ? 'Full Day (Morning + Afternoon)' : 'Morning Session Only (10:10 AM – 12:30 PM)'}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSatAfternoon(!satAfternoon)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition border ${
+                  satAfternoon
+                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300'
+                }`}
+              >
+                {satAfternoon ? 'Turn Afternoon OFF' : 'Turn Afternoon ON'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -479,7 +802,15 @@ export default function AdminCalendarPage() {
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-sans font-bold block">Session 2</span>
                   <span className="font-semibold text-slate-800">
-                    {d.s2_start && d.s2_end ? `${formatSlotTime(d.s2_start)} - ${formatSlotTime(d.s2_end)}` : '—'}
+                    {d.status === 'open' ? (
+                      d.s2_start && d.s2_end ? (
+                        `${formatSlotTime(d.s2_start)} - ${formatSlotTime(d.s2_end)}`
+                      ) : (
+                        <span className="text-amber-700 font-bold text-[11px]">Closed (Morning Only)</span>
+                      )
+                    ) : (
+                      '—'
+                    )}
                   </span>
                 </div>
               </div>
@@ -580,9 +911,17 @@ export default function AdminCalendarPage() {
                         : '—'}
                     </td>
                     <td className="py-3.5 px-4 font-mono text-slate-700 whitespace-nowrap">
-                      {d.s2_start && d.s2_end
-                        ? `${formatSlotTime(d.s2_start)} - ${formatSlotTime(d.s2_end)}`
-                        : '—'}
+                      {d.status === 'open' ? (
+                        d.s2_start && d.s2_end ? (
+                          `${formatSlotTime(d.s2_start)} - ${formatSlotTime(d.s2_end)}`
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 font-sans">
+                            Closed (Morning Only)
+                          </span>
+                        )
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-slate-500 italic">{d.note || '—'}</td>
                     <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
@@ -660,8 +999,8 @@ export default function AdminCalendarPage() {
                       : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                   }`}
                 >
-                  <span className="block font-bold">TDPCS Standard</span>
-                  <span className="text-[10px] text-slate-500 font-normal">Tue, Thu & Sat (10:10–12:30 & 14:00–17:00)</span>
+                  <span className="block font-bold">Standard 3 Days</span>
+                  <span className="text-[10px] text-slate-500 font-normal">Tue, Thu &amp; Sat (Society Standard)</span>
                 </button>
 
                 <button
@@ -753,6 +1092,14 @@ export default function AdminCalendarPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Saturday afternoon status info */}
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-700 flex items-center justify-between">
+              <span>Saturday afternoon rule:</span>
+              <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${satAfternoon ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                {satAfternoon ? 'Open (2:00 PM – 5:00 PM)' : 'Closed (Morning Only)'}
+              </span>
             </div>
 
             {/* Non-destructive guarantee notice */}

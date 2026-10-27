@@ -90,6 +90,32 @@ export async function autoGenerateOpenDays(
   return data as AutoGenerateResult;
 }
 
+export type SyncScheduleResult = {
+  ok: boolean;
+  working_dows?: number[];
+  saturday_afternoon?: boolean;
+  updated_open_days?: number;
+  blocked_closed_days?: number;
+  auto_generation?: any;
+  error?: string;
+};
+
+export async function syncWorkingSchedule(
+  workingDows: number[] = [2, 4, 6],
+  saturdayAfternoon: boolean = false
+): Promise<SyncScheduleResult> {
+  const supabase = createClient();
+  const { data, error } = await (supabase.rpc as any)('sync_working_schedule', {
+    p_working_dows: workingDows,
+    p_sat_afternoon: saturdayAfternoon,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return data as SyncScheduleResult;
+}
+
 export type PurgeRecordsResult = {
   ok: boolean;
   cutoff_date?: string;

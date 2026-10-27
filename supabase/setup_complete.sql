@@ -691,3 +691,174 @@ to anon, authenticated, service_role;
 
 grant all on bot_sessions to authenticated, service_role;
 
+-- ---------------------------------------------------------
+-- Weekly Schedule & Saturday Afternoon Session Management
+-- ---------------------------------------------------------
+insert into settings (key, value)
+values 
+  ('auto_calendar_dows', '[2,4,6]'),
+  ('saturday_afternoon_session', 'false')
+on conflict (key) do nothing;
+
+create or replace function public.auto_generate_open_days(
+  p_days_ahead integer default 60,
+  p_working_dows integer[] default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $function$
+declare
+  v_today date := (now() at time zone 'Asia/Kolkata')::date;
+  v_day date;
+  v_dow int;
+  v_inserted int := 0;
+  v_dows int[];
+  v_sat_pm boolean;
+  v_s2_start time;
+  v_s2_end time;
+  v_note text;
+begin
+  if p_working_dows is not null and array_length(p_working_dows, 1) > 0 then
+    v_dows := p_working_dows;
+  else
+    select coalesce(
+      (select array_agg(elem::int) from jsonb_array_elements_text(coalesce((select value::jsonb from settings where key='auto_calendar_dows'), '[2,4,6]'::jsonb)) as elem),
+      array[2, 4, 6]
+    ) into v_dows;
+  end if;
+
+  select coalesce((select value = 'true' from settings where key='saturday_afternoon_session'), false) into v_sat_pm;
+
+  for i in 0..p_days_ahead loop
+    v_day := v_today + i;
+    v_dow := extract(isodow from v_day)::int;
+
+    if (v_dow = any(v_dows)) then
+      if v_dow = 6 then
+        if v_sat_pm then
+          v_s2_start := '14:00'::time;
+          v_s2_end := '17:00'::time;
+          v_note := 'Saturday (Full Day)';
+        else
+          v_s2_start := null;
+          v_s2_end := null;
+          v_note := 'Saturday (Morning Only 10:10-12:30)';
+        end if;
+      else
+        v_s2_start := '14:00'::time;
+        v_s2_end := '17:00'::time;
+        v_note := 'Standard Working Day';
+      end if;
+
+      insert into open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)
+      values (v_day, 'open', '10:10'::time, '12:30'::time, v_s2_start, v_s2_end, v_note)
+      on conflict (day) do update set
+        status = 'open',
+        s1_start = '10:10'::time,
+        s1_end = '12:30'::time,
+        s2_start = excluded.s2_start,
+        s2_end = excluded.s2_end,
+        note = excluded.note
+      where open_days.status = 'open' or open_days.note like 'Closed (%';
+
+      if found then
+        v_inserted := v_inserted + 1;
+      end if;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'ok', true,
+    'days_checked', p_days_ahead,
+    'days_inserted', v_inserted,
+    'working_dows', v_dows,
+    'saturday_afternoon', v_sat_pm,
+    'from_date', v_today,
+    'to_date', v_today + p_days_ahead
+  );
+end $function$;
+
+grant execute on function public.auto_generate_open_days(integer, integer[]) to authenticated, anon, service_role;
+
+create or replace function public.sync_working_schedule(
+  p_working_dows integer[] default array[2, 4, 6],
+  p_sat_afternoon boolean default false
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $function$
+declare
+  v_today date := (now() at time zone 'Asia/Kolkata')::date;
+  v_updated_open int := 0;
+  v_updated_blocked int := 0;
+  v_auto_res jsonb;
+begin
+  insert into settings (key, value)
+  values ('auto_calendar_dows', to_jsonb(p_working_dows)::text)
+  on conflict (key) do update set value = to_jsonb(p_working_dows)::text;
+
+  insert into settings (key, value)
+  values ('saturday_afternoon_session', case when p_sat_afternoon then 'true' else 'false' end)
+  on conflict (key) do update set value = case when p_sat_afternoon then 'true' else 'false' end;
+
+  update open_days
+     set status = 'open',
+         s1_start = '10:10'::time,
+         s1_end = '12:30'::time,
+         s2_start = case
+           when extract(isodow from day)::int = 6 then
+             case when p_sat_afternoon then '14:00'::time else null::time end
+           else '14:00'::time
+         end,
+         s2_end = case
+           when extract(isodow from day)::int = 6 then
+             case when p_sat_afternoon then '17:00'::time else null::time end
+           else '17:00'::time
+         end,
+         note = case
+           when extract(isodow from day)::int = 6 then
+             case when p_sat_afternoon then 'Saturday (Full Day)' else 'Saturday (Morning Only 10:10-12:30)' end
+           else 'Standard Working Day'
+         end
+   where day >= v_today
+     and extract(isodow from day)::int = any(p_working_dows);
+
+  get diagnostics v_updated_open = row_count;
+
+  update open_days
+     set status = 'blocked',
+         s1_start = null,
+         s1_end = null,
+         s2_start = null,
+         s2_end = null,
+         note = 'Closed (Non-working day)'
+   where day >= v_today
+     and extract(isodow from day)::int <> all(p_working_dows)
+     and status = 'open'
+     and not exists (
+       select 1 from bookings b
+       where b.day = open_days.day
+         and b.status in ('booked', 'arrived', 'called')
+     );
+
+  get diagnostics v_updated_blocked = row_count;
+
+  select auto_generate_open_days(60, p_working_dows) into v_auto_res;
+
+  return jsonb_build_object(
+    'ok', true,
+    'working_dows', p_working_dows,
+    'saturday_afternoon', p_sat_afternoon,
+    'updated_open_days', v_updated_open,
+    'blocked_closed_days', v_updated_blocked,
+    'auto_generation', v_auto_res
+  );
+end $function$;
+
+grant execute on function public.sync_working_schedule(integer[], boolean) to authenticated, anon, service_role;
+
+

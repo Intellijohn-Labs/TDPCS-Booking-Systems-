@@ -915,50 +915,62 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                   </div>
                 </div>
 
-                {/* COUNTER BREAK BANNER */}
-                <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 px-3.5 py-2.5 rounded-xl flex items-center justify-center space-x-2 shadow-xs">
-                  <Clock className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                  <span className="font-medium">1:00 PM – 2:00 PM Lunch Break (Counters Closed • No Bookings)</span>
-                </div>
+                {/* COUNTER BREAK BANNER & AFTERNOON SESSION */}
+                {((allSlotSeats.length > 0 ? afternoonSeats.length : afternoonSlots.length) > 0) ? (
+                  <>
+                    <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 px-3.5 py-2.5 rounded-xl flex items-center justify-center space-x-2 shadow-xs">
+                      <Clock className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                      <span className="font-medium">1:00 PM – 2:00 PM Lunch Break (Counters Closed • No Bookings)</span>
+                    </div>
 
-                {/* AFTERNOON SESSION */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                      {strings.afternoonSlots} (2:00 PM – 5:00 PM)
-                    </h3>
-                    <span className="text-[10px] text-slate-400 font-medium">Afternoon Session</span>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                          {strings.afternoonSlots} (2:00 PM – 5:00 PM)
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-medium">Afternoon Session</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {allSlotSeats.length > 0
+                          ? afternoonSeats.map((seat) =>
+                              renderSlotSeatItem(seat, selectedSlotStart === seat.slot_start, setSelectedSlotStart, totalMinutes)
+                            )
+                          : afternoonSlots.map((slot) => {
+                              const isSelected = selectedSlotStart === slot;
+                              const endSlot = addMinutesToTimestamp(slot, totalMinutes);
+                              return (
+                                <button
+                                  key={slot}
+                                  type="button"
+                                  onClick={() => setSelectedSlotStart(slot)}
+                                  className={`min-h-[52px] py-2.5 px-3.5 rounded-xl border text-center transition-all flex flex-col justify-center items-center ${
+                                    isSelected
+                                      ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs ring-2 ring-emerald-800'
+                                      : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 active:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className="font-bold text-sm leading-tight">
+                                    {formatSlotTime(slot)} – {formatSlotTime(endSlot)}
+                                  </span>
+                                  <span className={`text-[10px] font-medium mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
+                                    {totalMinutes} min continuous slot
+                                  </span>
+                                </button>
+                              );
+                            })}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center space-x-2">
+                    <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>
+                      {selectedDay && new Date(selectedDay + 'T00:00:00').getDay() === 6
+                        ? 'Saturday Afternoon Session is Closed • Only Morning Session (10:10 AM – 12:30 PM) is available on this date.'
+                        : 'Afternoon session is closed for this date • Please select an available morning slot above.'}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {allSlotSeats.length > 0
-                      ? afternoonSeats.map((seat) =>
-                          renderSlotSeatItem(seat, selectedSlotStart === seat.slot_start, setSelectedSlotStart, totalMinutes)
-                        )
-                      : afternoonSlots.map((slot) => {
-                          const isSelected = selectedSlotStart === slot;
-                          const endSlot = addMinutesToTimestamp(slot, totalMinutes);
-                          return (
-                            <button
-                              key={slot}
-                              type="button"
-                              onClick={() => setSelectedSlotStart(slot)}
-                              className={`min-h-[52px] py-2.5 px-3.5 rounded-xl border text-center transition-all flex flex-col justify-center items-center ${
-                                isSelected
-                                  ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs ring-2 ring-emerald-800'
-                                  : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 active:bg-slate-50'
-                              }`}
-                            >
-                              <span className="font-bold text-sm leading-tight">
-                                {formatSlotTime(slot)} – {formatSlotTime(endSlot)}
-                              </span>
-                              <span className={`text-[10px] font-medium mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
-                                {totalMinutes} min continuous slot
-                              </span>
-                            </button>
-                          );
-                        })}
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </div>
@@ -1354,26 +1366,34 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                       </div>
                     )}
 
-                    <div className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg text-center font-medium">
-                      1:00 PM – 2:00 PM Lunch Break (Closed)
-                    </div>
-
-                    {/* Reschedule Afternoon */}
-                    {rescheduleAfternoonSeats.length > 0 && (
-                      <div>
-                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                          Afternoon (2:00 PM – 5:00 PM)
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {rescheduleAfternoonSeats.map((seat) =>
-                            renderSlotSeatItem(
-                              seat,
-                              rescheduleNewStart === seat.slot_start,
-                              setRescheduleNewStart,
-                              bookingToReschedule.minutes
-                            )
-                          )}
+                    {rescheduleAfternoonSeats.length > 0 ? (
+                      <>
+                        <div className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg text-center font-medium">
+                          1:00 PM – 2:00 PM Lunch Break (Closed)
                         </div>
+
+                        {/* Reschedule Afternoon */}
+                        <div>
+                          <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                            Afternoon (2:00 PM – 5:00 PM)
+                          </h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {rescheduleAfternoonSeats.map((seat) =>
+                              renderSlotSeatItem(
+                                seat,
+                                rescheduleNewStart === seat.slot_start,
+                                setRescheduleNewStart,
+                                bookingToReschedule.minutes
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-lg text-amber-900 text-xs text-center font-medium">
+                        {rescheduleDay && new Date(rescheduleDay + 'T00:00:00').getDay() === 6
+                          ? 'Saturday Afternoon Session is Closed • Morning slots available above'
+                          : 'Afternoon session closed • Morning slots available above'}
                       </div>
                     )}
                   </div>

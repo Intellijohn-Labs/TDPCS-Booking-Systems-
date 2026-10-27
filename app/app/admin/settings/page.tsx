@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { logAuditEvent } from '@/lib/staff-api';
+import { logAuditEvent, syncWorkingSchedule } from '@/lib/staff-api';
 import {
   Sliders,
   Save,
@@ -14,7 +14,20 @@ import {
   ShieldCheck,
   Webhook,
   Phone,
+  CalendarDays,
+  Sun,
+  Moon,
 } from 'lucide-react';
+
+const DOW_LABELS = [
+  { dow: 1, short: 'Mon' },
+  { dow: 2, short: 'Tue' },
+  { dow: 3, short: 'Wed' },
+  { dow: 4, short: 'Thu' },
+  { dow: 5, short: 'Fri' },
+  { dow: 6, short: 'Sat' },
+  { dow: 7, short: 'Sun' },
+];
 
 export default function AdminSettingsPage() {
   const [slotStep, setSlotStep] = useState('5');
@@ -23,6 +36,8 @@ export default function AdminSettingsPage() {
   const [advanceDays, setAdvanceDays] = useState('15');
   const [clientNotifyNumber, setClientNotifyNumber] = useState('');
   const [n8nWebhookUrl, setN8nWebhookUrl] = useState('');
+  const [saturdayAfternoonSession, setSaturdayAfternoonSession] = useState(false);
+  const [autoCalendarDows, setAutoCalendarDows] = useState<number[]>([2, 4, 6]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,6 +64,13 @@ export default function AdminSettingsPage() {
           if (item.key === 'advance_days') setAdvanceDays(item.value);
           if (item.key === 'client_notify_number') setClientNotifyNumber(item.value);
           if (item.key === 'n8n_webhook_url') setN8nWebhookUrl(item.value);
+          if (item.key === 'saturday_afternoon_session') setSaturdayAfternoonSession(item.value === 'true');
+          if (item.key === 'auto_calendar_dows') {
+            try {
+              const parsed = JSON.parse(item.value);
+              if (Array.isArray(parsed) && parsed.length > 0) setAutoCalendarDows(parsed);
+            } catch {}
+          }
         });
       }
     } catch (err) {
@@ -75,12 +97,17 @@ export default function AdminSettingsPage() {
         { key: 'advance_days', value: advanceDays.trim() },
         { key: 'client_notify_number', value: clientNotifyNumber.trim() },
         { key: 'n8n_webhook_url', value: n8nWebhookUrl.trim() },
+        { key: 'saturday_afternoon_session', value: saturdayAfternoonSession ? 'true' : 'false' },
+        { key: 'auto_calendar_dows', value: JSON.stringify(autoCalendarDows) },
       ];
 
       for (const item of updates) {
         const { error } = await supabase.from('settings').upsert(item as any);
         if (error) throw error;
       }
+
+      // Synchronize calendar schedule based on new active days and Saturday afternoon toggle
+      await syncWorkingSchedule(autoCalendarDows, saturdayAfternoonSession);
 
       await logAuditEvent('admin:update_settings', {
         slot_step: slotStep.trim(),
@@ -89,6 +116,8 @@ export default function AdminSettingsPage() {
         advance_days: advanceDays.trim(),
         client_notify_number: clientNotifyNumber.trim(),
         n8n_webhook_url: n8nWebhookUrl.trim(),
+        saturday_afternoon_session: saturdayAfternoonSession,
+        auto_calendar_dows: autoCalendarDows,
       });
 
       setFeedback({ type: 'success', message: 'All branch settings saved successfully.' });
@@ -248,6 +277,72 @@ export default function AdminSettingsPage() {
               <p className="text-[11px] text-slate-400 mt-1">
                 How many days ahead members can view and book open dates (default: 15 days).
               </p>
+            </div>
+
+            {/* Saturday Afternoon Session Toggle */}
+            <div className="sm:col-span-2 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <label className="block font-semibold text-slate-800">
+                  Saturday Afternoon Session (2:00 PM – 5:00 PM)
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  {saturdayAfternoonSession
+                    ? 'Members can book both Morning & Afternoon slots on Saturdays.'
+                    : 'Members can ONLY book Morning slots (10:10 AM – 12:30 PM). Afternoon session is closed.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaturdayAfternoonSession(!saturdayAfternoonSession)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition border shrink-0 ${
+                  saturdayAfternoonSession
+                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
+                    : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                }`}
+              >
+                {saturdayAfternoonSession ? '✓ Afternoon ON' : '✕ Afternoon OFF'}
+              </button>
+            </div>
+
+            {/* Weekly Open Days */}
+            <div className="sm:col-span-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block font-semibold text-slate-800">
+                  Weekly Open Days for Member Booking ({autoCalendarDows.length} Days Active)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setAutoCalendarDows([2, 4, 6])}
+                  className="text-[11px] text-emerald-800 hover:underline font-bold"
+                >
+                  Reset to Standard 3 Days (Tue, Thu, Sat)
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {DOW_LABELS.map(({ dow, short }) => {
+                  const isActive = autoCalendarDows.includes(dow);
+                  return (
+                    <button
+                      key={dow}
+                      type="button"
+                      onClick={() => {
+                        setAutoCalendarDows((prev) =>
+                          prev.includes(dow)
+                            ? prev.filter((d) => d !== dow)
+                            : [...prev, dow].sort()
+                        );
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+                        isActive
+                          ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {short} {isActive ? '✓' : ''}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

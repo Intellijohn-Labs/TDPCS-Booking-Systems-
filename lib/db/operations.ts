@@ -741,8 +741,13 @@ export function executeRpc(functionName: string, args: any = {}): any {
   }
 
   if (functionName === 'auto_generate_open_days') {
-    const { p_days_ahead = 60, p_working_dows = [1, 2, 3, 4, 5, 6] } = args;
+    const { p_days_ahead = 60, p_working_dows = null } = args;
     return autoGenerateOpenDaysSqlite(db, p_days_ahead, p_working_dows);
+  }
+
+  if (functionName === 'sync_working_schedule') {
+    const { p_working_dows = [2, 4, 6], p_sat_afternoon = false } = args;
+    return syncWorkingScheduleSqlite(db, p_working_dows, p_sat_afternoon);
   }
 
   if (functionName === 'log_audit_event') {
@@ -784,11 +789,42 @@ export function executeRpc(functionName: string, args: any = {}): any {
 function autoGenerateOpenDaysSqlite(
   db: any,
   daysAhead: number = 60,
-  workingDows: number[] = [1, 2, 3, 4, 5, 6]
+  workingDows: number[] | null = null
 ) {
-  const insertDay = db.prepare(`
-    INSERT OR IGNORE INTO open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)
-    VALUES (?, 'open', ?, ?, ?, ?, ?)
+  let dows = workingDows;
+  if (!dows || dows.length === 0) {
+    try {
+      const row = db.prepare("SELECT value FROM settings WHERE key = 'auto_calendar_dows'").get();
+      if (row?.value) {
+        dows = JSON.parse(row.value);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  if (!dows || dows.length === 0) {
+    dows = [2, 4, 6];
+  }
+
+  let satAfternoon = false;
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'saturday_afternoon_session'").get();
+    satAfternoon = row?.value === 'true';
+  } catch {
+    // ignore
+  }
+
+  const upsertDay = db.prepare(`
+    INSERT INTO open_days (day, status, s1_start, s1_end, s2_start, s2_end, note)
+    VALUES (?, 'open', '10:10', '12:30', ?, ?, ?)
+    ON CONFLICT(day) DO UPDATE SET
+      status = 'open',
+      s1_start = '10:10',
+      s1_end = '12:30',
+      s2_start = excluded.s2_start,
+      s2_end = excluded.s2_end,
+      note = excluded.note
+    WHERE open_days.status = 'open' OR open_days.note LIKE 'Closed (%'
   `);
 
   const today = new Date();
@@ -800,8 +836,15 @@ function autoGenerateOpenDaysSqlite(
     const dow = d.getDay(); // 0 Sun, 1 Mon, 2 Tue, 3 Wed, 4 Thu, 5 Fri, 6 Sat
     const isodow = dow === 0 ? 7 : dow; // 1=Mon, ..., 6=Sat, 7=Sun
 
-    if (workingDows.includes(isodow)) {
-      const res = insertDay.run(dayStr, '10:10', '12:30', '14:00', '17:00', 'Standard Working Day');
+    if (dows.includes(isodow)) {
+      const isSat = isodow === 6;
+      const s2Start = isSat ? (satAfternoon ? '14:00' : null) : '14:00';
+      const s2End = isSat ? (satAfternoon ? '17:00' : null) : '17:00';
+      const note = isSat
+        ? (satAfternoon ? 'Saturday (Full Day)' : 'Saturday (Morning Only 10:10-12:30)')
+        : 'Standard Working Day';
+
+      const res = upsertDay.run(dayStr, s2Start, s2End, note);
       if (res.changes > 0) inserted++;
     }
   }
@@ -810,6 +853,86 @@ function autoGenerateOpenDaysSqlite(
     ok: true,
     days_checked: daysAhead,
     days_inserted: inserted,
+    working_dows: dows,
+    saturday_afternoon: satAfternoon,
     from_date: today.toISOString().split('T')[0],
+  };
+}
+
+function syncWorkingScheduleSqlite(
+  db: any,
+  workingDows: number[] = [2, 4, 6],
+  satAfternoon: boolean = false
+) {
+  try {
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES ('auto_calendar_dows', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(JSON.stringify(workingDows));
+
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES ('saturday_afternoon_session', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(satAfternoon ? 'true' : 'false');
+  } catch (e) {
+    console.error('Error saving settings in syncWorkingScheduleSqlite', e);
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Update existing upcoming open days
+  const allFuture = db.prepare("SELECT day, status FROM open_days WHERE day >= ?").all(today);
+  let updatedOpen = 0;
+  let updatedBlocked = 0;
+
+  const updateOpenStmt = db.prepare(`
+    UPDATE open_days
+    SET status = 'open', s1_start = '10:10', s1_end = '12:30', s2_start = ?, s2_end = ?, note = ?
+    WHERE day = ?
+  `);
+
+  const blockStmt = db.prepare(`
+    UPDATE open_days
+    SET status = 'blocked', s1_start = null, s1_end = null, s2_start = null, s2_end = null, note = 'Closed (Non-working day)'
+    WHERE day = ?
+  `);
+
+  for (const row of allFuture) {
+    const d = new Date(row.day + 'T00:00:00');
+    const dow = d.getDay();
+    const isodow = dow === 0 ? 7 : dow;
+
+    if (workingDows.includes(isodow)) {
+      const isSat = isodow === 6;
+      const s2Start = isSat ? (satAfternoon ? '14:00' : null) : '14:00';
+      const s2End = isSat ? (satAfternoon ? '17:00' : null) : '17:00';
+      const note = isSat
+        ? (satAfternoon ? 'Saturday (Full Day)' : 'Saturday (Morning Only 10:10-12:30)')
+        : 'Standard Working Day';
+
+      const res = updateOpenStmt.run(s2Start, s2End, note, row.day);
+      if (res.changes > 0) updatedOpen++;
+    } else if (row.status === 'open') {
+      const hasBooking = db.prepare(`
+        SELECT 1 FROM bookings
+        WHERE day = ? AND status IN ('booked', 'arrived', 'called') LIMIT 1
+      `).get(row.day);
+
+      if (!hasBooking) {
+        const res = blockStmt.run(row.day);
+        if (res.changes > 0) updatedBlocked++;
+      }
+    }
+  }
+
+  const autoRes = autoGenerateOpenDaysSqlite(db, 60, workingDows);
+
+  return {
+    ok: true,
+    working_dows: workingDows,
+    saturday_afternoon: satAfternoon,
+    updated_open_days: updatedOpen,
+    blocked_closed_days: updatedBlocked,
+    auto_generation: autoRes,
   };
 }
