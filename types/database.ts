@@ -182,6 +182,7 @@ export interface Database {
           created_at: string;
           updated_at: string;
           cancelled_at: string | null;
+          reminder_sent: boolean;
         };
         Insert: {
           id?: number;
@@ -202,6 +203,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           cancelled_at?: string | null;
+          reminder_sent?: boolean;
         };
         Update: {
           id?: number;
@@ -222,6 +224,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           cancelled_at?: string | null;
+          reminder_sent?: boolean;
         };
         Relationships: GenericRelationship[];
       };

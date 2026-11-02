@@ -73,6 +73,7 @@ create table if not exists bookings (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   cancelled_at timestamptz,
+  reminder_sent boolean not null default false,
   unique (day, token_no),
   constraint no_overlap exclude using gist (
     counter with =, tsrange(slot_start, slot_end) with &&
@@ -81,6 +82,7 @@ create table if not exists bookings (
 
 create index if not exists idx_bookings_mobile_status on bookings (mobile, status);
 create index if not exists idx_bookings_day_status on bookings (day, status);
+create index if not exists idx_bookings_reminder on bookings (day, status, reminder_sent);
 
 create table if not exists audit_log (
   id bigserial primary key,
