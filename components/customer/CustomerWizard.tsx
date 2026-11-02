@@ -85,43 +85,58 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
   const [rescheduleSuccessMsg, setRescheduleSuccessMsg] = useState<string | null>(null);
+  const [refreshingDates, setRefreshingDates] = useState(false);
 
-  // Initial load
-  const loadInitData = async () => {
-    setLoadingInit(true);
-    setInitError(null);
+  // Initial load or background refresh
+  const loadInitData = async (isInitial = false) => {
+    if (isInitial) {
+      setLoadingInit(true);
+      setInitError(null);
+    } else {
+      setRefreshingDates(true);
+    }
     try {
       const res = await fetchCustomerInit(token);
       if (!res.ok) {
-        setInitError(res.error || 'link_expired');
+        if (isInitial) {
+          setInitError(res.error || 'link_expired');
+        }
       } else {
         setInitData(res);
-        if (res.last_name) {
+        if (res.last_name && !customerName) {
           setCustomerName(res.last_name);
         }
-        if (res.purpose === 'manage') {
-          setStep('manage');
-        } else {
-          setStep(1);
+        if (isInitial) {
+          if (res.purpose === 'manage') {
+            setStep('manage');
+          } else {
+            setStep(1);
+          }
         }
       }
     } catch {
-      setInitError('network_error');
+      if (isInitial) {
+        setInitError('network_error');
+      }
     } finally {
-      setLoadingInit(false);
+      if (isInitial) {
+        setLoadingInit(false);
+      } else {
+        setRefreshingDates(false);
+      }
     }
   };
 
   useEffect(() => {
     if (token) {
-      loadInitData();
+      loadInitData(true);
     }
   }, [token]);
 
   // Re-fetch latest open dates from database whenever user enters Step 2 (Date selection)
   useEffect(() => {
     if (token && step === 2) {
-      loadInitData();
+      loadInitData(false);
     }
   }, [step]);
 
@@ -241,7 +256,7 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
       if (res.ok) {
         setCancelFeedback(strings.cancelSuccess);
         setBookingToCancel(null);
-        await loadInitData();
+        await loadInitData(false);
       } else {
         alert(res.error || 'Failed to cancel booking');
       }
@@ -294,7 +309,7 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
           strings.rescheduleSuccess.replace('{token}', res.token || '')
         );
         setBookingToReschedule(null);
-        await loadInitData();
+        await loadInitData(false);
         setStep('manage');
       } else {
         if (res.error === 'slot_taken' || res.error === 'slot_cutoff_passed') {
@@ -425,7 +440,7 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
 
           {!isExpired && (
             <button
-              onClick={() => loadInitData()}
+              onClick={() => loadInitData(true)}
               className="mt-5 inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-xs transition shadow-xs"
             >
               <RotateCw className="w-3.5 h-3.5" />
@@ -730,8 +745,8 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                 availableDates={initData.dates}
                 selectedDate={selectedDay}
                 onSelectDate={(day) => handleDaySelect(day)}
-                onRefresh={loadInitData}
-                refreshing={loadingInit}
+                onRefresh={() => loadInitData(false)}
+                refreshing={refreshingDates}
               />
             )}
           </div>
@@ -1147,7 +1162,7 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
               <button
                 type="button"
                 onClick={async () => {
-                  await loadInitData();
+                  await loadInitData(false);
                   setStep('manage');
                 }}
                 className="w-full min-h-[48px] bg-slate-900 hover:bg-black text-white font-bold text-sm py-3 px-4 rounded-xl shadow transition"
@@ -1318,8 +1333,8 @@ export default function CustomerWizard({ token }: CustomerWizardProps) {
                 availableDates={initData?.dates || []}
                 selectedDate={rescheduleDay}
                 onSelectDate={(day) => loadRescheduleSlotsForDay(day)}
-                onRefresh={loadInitData}
-                refreshing={loadingInit}
+                onRefresh={() => loadInitData(false)}
+                refreshing={refreshingDates}
               />
             </div>
 
