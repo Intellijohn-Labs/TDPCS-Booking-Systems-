@@ -1,7 +1,7 @@
 const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4YzU5YjU0MS00NTRmLTRjZTYtYjIyNS02OThlODkyZDVmZmYiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiMjU2MjFlN2QtNWM0Zi00OTMyLWIzNWEtYWE4NDA0MzU5MTk4IiwiaWF0IjoxNzkxNDgyNDAxLCJleHAiOjE3OTQwMDYwMDB9.Hfd3YAwywshynMoFOTqzdEI8CeQOsIwhOsc0EC_AGBs';
 const workflowId = '86QmzTAMJ83IQznP';
 const n8nHost = 'https://n8n.srv1691210.hstgr.cloud';
-const vercelBaseUrl = 'https://tdpcs-booking-systems.vercel.app';
+const vercelBaseUrl = 'https://apt.tdpcs.in';
 
 async function update() {
   console.log('Fetching workflow from n8n...');

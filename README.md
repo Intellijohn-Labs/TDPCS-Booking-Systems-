@@ -353,7 +353,7 @@ Once your domain is live with HTTPS on your VPS:
    - Change the booking link domain from the old Vercel URL to your new VPS domain:
      ```javascript
      // Replace:
-     // https://tdpcs-booking-systems.vercel.app/b/{{ $json.id }}
+     // https://apt.tdpcs.in/b/{{ $json.id }}
      // With:
      https://your-domain.com/b/{{ $json.id }}
      ```
